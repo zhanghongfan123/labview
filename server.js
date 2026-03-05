@@ -24,7 +24,12 @@ app.use(bodyParser.json());
 console.log('Serving static files from:', path.join(__dirname, 'dist'));
 
 // Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use('/labview', express.static(path.join(__dirname, 'dist')));
+
+// Redirect root to /labview
+app.get('/', (req, res) => {
+  res.redirect('/labview');
+});
 
 const CACHE_DIR = path.join(__dirname, 'cache');
 
@@ -71,7 +76,7 @@ app.post('/api/history/:agentId', async (req, res) => {
 
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.
-app.use((req, res) => {
+app.use('/labview', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
