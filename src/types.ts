@@ -19,7 +19,18 @@ export interface Agent {
   apiKey?: string;
 }
 
-export type AgentId = 'step1' | 'step2' | 'step3' | 'step4' | 'help';
+export interface SharedData {
+  step1Description: string;
+  step2Json: string;
+}
+
+export type AgentId = 'home' | 'step1' | 'step2' | 'step3' | 'step4' | 'help';
+
+export const HOME_AGENT: Agent = {
+  id: 'home',
+  name: '助手首页',
+  description: '工作流程概览',
+};
 
 export const AGENTS: Agent[] = [
   {

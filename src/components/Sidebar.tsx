@@ -1,6 +1,6 @@
 import React from 'react';
-import { Bot, FileText, CheckSquare, Layers, HelpCircle, X } from 'lucide-react';
-import { AGENTS, type Agent } from '../types';
+import { Bot, FileText, CheckSquare, Layers, HelpCircle, X, Home } from 'lucide-react';
+import { AGENTS, HOME_AGENT, type Agent } from '../types';
 
 interface SidebarProps {
   currentAgent: Agent;
@@ -13,6 +13,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ currentAgent, onSelectAgent, isMobileOpen, isDesktopOpen, onMobileClose }) => {
   const getIcon = (id: string) => {
     switch (id) {
+      case 'home': return <Home className="w-5 h-5" />;
       case 'step1': return <FileText className="w-5 h-5" />;
       case 'step2': return <CheckSquare className="w-5 h-5" />;
       case 'step3': return <Layers className="w-5 h-5" />;
@@ -20,6 +21,28 @@ const Sidebar: React.FC<SidebarProps> = ({ currentAgent, onSelectAgent, isMobile
       default: return <HelpCircle className="w-5 h-5" />;
     }
   };
+
+  const renderAgentButton = (agent: Agent) => (
+    <button
+      key={agent.id}
+      onClick={() => {
+        onSelectAgent(agent);
+        onMobileClose();
+      }}
+      className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-800 transition-colors ${
+        currentAgent.id === agent.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'border-l-4 border-transparent'
+      }`}
+      title={agent.name}
+    >
+      <div className={`${currentAgent.id === agent.id ? 'text-blue-400' : 'text-gray-400'}`}>
+        {getIcon(agent.id)}
+      </div>
+      <div className={`${!isDesktopOpen && 'md:hidden'}`}>
+        <div className="font-medium">{agent.name}</div>
+        <div className="text-xs text-gray-500 truncate">{agent.description}</div>
+      </div>
+    </button>
+  );
 
   return (
     <>
@@ -53,27 +76,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentAgent, onSelectAgent, isMobile
         </div>
         
         <div className="flex-1 overflow-y-auto py-4 whitespace-nowrap">
-          {AGENTS.map((agent) => (
-            <button
-              key={agent.id}
-              onClick={() => {
-                onSelectAgent(agent);
-                onMobileClose(); // Close sidebar on selection on mobile
-              }}
-              className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-800 transition-colors ${
-                currentAgent.id === agent.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'border-l-4 border-transparent'
-              }`}
-              title={agent.name}
-            >
-              <div className={`${currentAgent.id === agent.id ? 'text-blue-400' : 'text-gray-400'}`}>
-                {getIcon(agent.id)}
-              </div>
-              <div className={`${!isDesktopOpen && 'md:hidden'}`}>
-                <div className="font-medium">{agent.name}</div>
-                <div className="text-xs text-gray-500 truncate">{agent.description}</div>
-              </div>
-            </button>
-          ))}
+          {renderAgentButton(HOME_AGENT)}
+          <div className="my-2 border-t border-gray-800 mx-4"></div>
+          {AGENTS.map((agent) => renderAgentButton(agent))}
         </div>
       </div>
     </>

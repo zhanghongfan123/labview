@@ -1,81 +1,72 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import axios from 'axios';
-import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, MessageSquare } from 'lucide-react';
-import { type Message, type Agent } from '../types';
+import * as htmlToImage from 'html-to-image';
+import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, MessageSquare, Download } from 'lucide-react';
+import { type Message, type Agent, type SharedData } from '../types';
 
 interface ChatInterfaceProps {
   agent: Agent;
   onOpenSidebar: () => void;
   isDesktopSidebarOpen: boolean;
   onToggleDesktopSidebar: () => void;
+  sharedData?: SharedData;
+  updateSharedData?: (key: keyof SharedData, value: string) => void;
 }
 
 interface MessageContentProps {
   content: string;
 }
 
-const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
-  if (!content.includes('<think>')) {
-    return (
-      <ReactMarkdown 
-        rehypePlugins={[rehypeRaw]}
-        components={{
-          pre: ({ node, ...props }) => (
-            <pre {...props} className="overflow-x-auto text-xs md:text-sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
-          ),
-          code: ({ node, ...props }) => (
-            <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
-          ),
-          p: ({ node, ...props }) => (
-            <p {...props} className="break-words" style={{ overflowWrap: 'break-word' }} />
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    );
-  }
-
+const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) => {
   const parts = [];
   let currentText = content;
   
-  while (currentText.length > 0) {
-    const startIdx = currentText.indexOf('<think>');
-    if (startIdx === -1) {
-      parts.push({ type: 'text', content: currentText });
-      break;
+  if (!content.includes('<think>')) {
+    parts.push({ type: 'text', content: content });
+  } else {
+    while (currentText.length > 0) {
+      const startIdx = currentText.indexOf('<think>');
+      if (startIdx === -1) {
+        parts.push({ type: 'text', content: currentText });
+        break;
+      }
+      
+      if (startIdx > 0) {
+        parts.push({ type: 'text', content: currentText.slice(0, startIdx) });
+      }
+      
+      const rest = currentText.slice(startIdx + 7);
+      const endIdx = rest.indexOf('</think>');
+      
+      if (endIdx === -1) {
+        parts.push({ type: 'think', content: rest });
+        break;
+      }
+      
+      parts.push({ type: 'think', content: rest.slice(0, endIdx) });
+      currentText = rest.slice(endIdx + 8);
     }
-    
-    if (startIdx > 0) {
-      parts.push({ type: 'text', content: currentText.slice(0, startIdx) });
-    }
-    
-    const rest = currentText.slice(startIdx + 7);
-    const endIdx = rest.indexOf('</think>');
-    
-    if (endIdx === -1) {
-      parts.push({ type: 'think', content: rest });
-      break;
-    }
-    
-    parts.push({ type: 'think', content: rest.slice(0, endIdx) });
-    currentText = rest.slice(endIdx + 8);
   }
 
   return (
     <>
       {parts.map((part, index) => {
+        // Use a unique key that combines index and content type to help React track elements
+        const key = `part-${index}-${part.type}`;
+        
         if (part.type === 'think') {
           return (
-             <details key={index} className="mb-2 rounded-lg overflow-hidden border border-blue-100 bg-blue-50/50 group">
+             <details key={key} className="mb-2 rounded-lg overflow-hidden border border-blue-100 bg-blue-50/50 group">
                <summary className="px-3 py-2 cursor-pointer text-xs font-medium text-blue-600 select-none hover:bg-blue-100/50 transition-colors flex items-center gap-2 list-none">
                  <span className="opacity-70">💭 思考过程(点击展开)</span>
                </summary>
                <div className="p-2 md:p-3 text-gray-600 text-xs border-t border-blue-100/50 bg-white/50">
                  <div className="min-w-0" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                    <ReactMarkdown 
+                     remarkPlugins={[remarkGfm]}
                      rehypePlugins={[rehypeRaw]}
                      components={{
                        pre: ({ node, ...props }) => (
@@ -84,8 +75,16 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
                        code: ({ node, ...props }) => (
                          <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
                        ),
-                       p: ({ node, ...props }) => (
-                         <p {...props} className="break-words" style={{ overflowWrap: 'break-word' }} />
+                       form: ({ node, ...props }) => (
+                         <form {...props} onSubmit={(e) => { e.preventDefault(); console.log('Form submission prevented'); }} />
+                       ),
+                       button: ({ node, ...props }) => (
+                         <button {...props} type="button" onClick={(e) => {
+                           // If it's the "Generate" button, maybe we want to do something?
+                           // For now, just prevent default submission
+                           e.preventDefault();
+                           console.log('Button clicked:', e.currentTarget.innerText);
+                         }} />
                        ),
                      }}
                    >
@@ -97,8 +96,9 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
           );
         }
         return (
-          <div key={index} className="break-words min-w-0" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+          <div key={key} className="break-words min-w-0" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
             <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeRaw]}
               components={{
                 pre: ({ node, ...props }) => (
@@ -107,8 +107,14 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
                 code: ({ node, ...props }) => (
                   <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
                 ),
-                p: ({ node, ...props }) => (
-                  <p {...props} className="break-words" style={{ overflowWrap: 'break-word' }} />
+                form: ({ node, ...props }) => (
+                  <form {...props} onSubmit={(e) => { e.preventDefault(); console.log('Form submission prevented'); }} />
+                ),
+                button: ({ node, ...props }) => (
+                  <button {...props} type="button" onClick={(e) => {
+                    e.preventDefault();
+                    console.log('Button clicked:', e.currentTarget.innerText);
+                  }} />
                 ),
               }}
             >
@@ -119,9 +125,9 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
       })}
     </>
   );
-};
+});
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar, sharedData, updateSharedData }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -133,13 +139,51 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
   const [jsonSchema, setJsonSchema] = useState('');
   const [requestInput, setRequestInput] = useState('');
   const [isStep2PanelOpen, setIsStep2PanelOpen] = useState(true);
-  const [isStep3PanelOpen, setIsStep3PanelOpen] = useState(true);
+
 
   // Cache for image URLs from upload_file_id
   const [imageUrlCache, setImageUrlCache] = useState<Map<string, string>>(new Map());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const hasJsonContent = (content: string) => {
+    if (!content) return false;
+    const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    // Check for markdown code blocks or direct JSON object start
+    return cleanContent.includes('```json') || cleanContent.startsWith('{');
+  };
+
+  const hasStep1Content = (content: string) => {
+    if (!content) return false;
+    const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    // Check for common Step 1 headers (flexible match)
+    const headers = ['#', '##', '###', 'Panel', 'Analysis', 'Structure', '面板', '分析', '结构'];
+    return headers.some(header => cleanContent.includes(header)) && cleanContent.length > 50;
+  };
+
+  const handleDownloadJson = (content: string, timestamp: number) => {
+    if (!content) return;
+    
+    // Filter out <think> tags if any
+    let cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    
+    // Try to extract JSON if it's wrapped in markdown code blocks
+    const jsonMatch = cleanContent.match(/```json\n([\s\S]*?)\n```/) || cleanContent.match(/```\n([\s\S]*?)\n```/);
+    if (jsonMatch && jsonMatch[1]) {
+      cleanContent = jsonMatch[1];
+    }
+
+    const blob = new Blob([cleanContent], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `step2_requirements_${new Date(timestamp).toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const generateUniqueId = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -359,6 +403,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    
+    let assistantMessageContent = '';
 
     try {
       if (!agent.apiKey) {
@@ -495,7 +541,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
        }
       else if (agent.id === 'step3') {
         // Step 3: inputs: {} (Empty)
-        // No specific inputs required
+        // Include Step2 JSON if available
+        if (sharedData?.step2Json) {
+          payload.query = `${userContent}\n\n以下是 Step2 生成的需求 JSON：\n${sharedData.step2Json}`;
+        }
       }
       else if (agent.id === 'step4') {
         // Step 4: inputs: { sd: file }
@@ -512,11 +561,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
             return;
         }
         if (hasFile) {
-           payload.inputs['sd'] = {
+           payload.inputs['sd'] = [{
                type: 'image',
                transfer_method: 'local_file',
                upload_file_id: fileId
-           };
+           }];
+        }
+        
+        // Include Step1 description if available
+        if (sharedData?.step1Description) {
+          payload.query = `${userContent}\n\n以下是 Step1 生成的面板描述：\n${sharedData.step1Description}`;
         }
       }
       else if (agent.id === 'help') {
@@ -524,17 +578,58 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
       }
 
       // Streaming request using fetch instead of axios for better stream handling
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat-messages`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${agent.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      let response;
+      let retryCount = 0;
+      const maxRetries = 1;
 
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      while (retryCount <= maxRetries) {
+        response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat-messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${agent.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (response.status === 404) {
+          // Check if it's "Conversation Not Exists"
+          const clonedRes = response.clone();
+          try {
+            const errorData = await clonedRes.json();
+            if (errorData.code === 'not_found' || (errorData.message && errorData.message.includes('Conversation'))) {
+              if (retryCount < maxRetries) {
+                console.log('Conversation expired, retrying with new session...');
+                setConversationId('');
+                localStorage.removeItem(`chat_conversation_id_${agent.id}`);
+                payload.conversation_id = '';
+                retryCount++;
+                continue;
+              }
+            }
+          } catch (e) {
+            // Ignore json parse error
+          }
+        }
+        break;
+      }
+
+      if (!response || !response.ok) {
+        let errorMsg = response ? `API Error: ${response.status} ${response.statusText}` : 'API Error: No response';
+        if (response) {
+          try {
+            const errorData = await response.json();
+            if (errorData && errorData.message) {
+              errorMsg += ` - ${errorData.message}`;
+            }
+            if (errorData && errorData.code) {
+               errorMsg += ` (Code: ${errorData.code})`;
+            }
+          } catch (e) {
+            // Ignore json parse error
+          }
+        }
+        throw new Error(errorMsg);
       }
 
       if (!response.body) {
@@ -543,7 +638,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let assistantMessageContent = '';
       
       // Create a placeholder message for the assistant
       const assistantMessageId = generateUniqueId();
@@ -607,10 +701,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
     } catch (error) {
       console.error('Error calling API:', error);
+      let errorContent = `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+
+      // Auto-recovery for invalid conversation ID
+      if (errorContent.includes('Conversation Not Exists') || errorContent.includes('404 NOT FOUND')) {
+        setConversationId('');
+        localStorage.removeItem(`chat_conversation_id_${agent.id}`);
+        errorContent += '\n\n**检测到会话已失效，已自动重置会话ID。请重新发送您的请求。**';
+      }
+
       const errorMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
+        content: errorContent,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -619,6 +722,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
       setSelectedFile(null);
       setPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      
+      // Save Step1 description to shared data
+      if (agent.id === 'step1' && assistantMessageContent && updateSharedData) {
+        updateSharedData('step1Description', assistantMessageContent);
+      }
+      
+      // Save Step2 JSON to shared data
+      if (agent.id === 'step2' && assistantMessageContent && updateSharedData) {
+        updateSharedData('step2Json', assistantMessageContent);
+      }
     }
   };
 
@@ -643,6 +756,35 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
           timestamp: Date.now(),
         },
       ]);
+    }
+  };
+
+  const handleDownloadStep1Data = () => {
+    // Deprecated global download
+  };
+
+  const handleDownloadMessageContent = async (messageId: string, timestamp: number) => {
+    const element = document.getElementById(`message-content-${messageId}`);
+    if (!element) return;
+
+    try {
+      const dataUrl = await htmlToImage.toPng(element, {
+        backgroundColor: '#ffffff',
+        style: {
+          padding: '20px',
+          borderRadius: '8px'
+        }
+      });
+      
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `step1_panel_description_${new Date(timestamp).toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to generate image:', error);
+      alert('生成图片失败，请重试');
     }
   };
 
@@ -675,13 +817,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
             </div>
           </div>
           
-          <button
-            onClick={handleClearHistory}
-            className="p-2 md:p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 border border-transparent hover:border-red-100"
-            title="清除历史记录"
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleClearHistory}
+              className="p-2 md:p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 border border-transparent hover:border-red-100"
+              title="清除历史记录"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-3 md:space-y-6 scroll-smooth">
@@ -692,6 +836,25 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
               </div>
               <h3 className="text-xl md:text-2xl font-bold text-gray-800 mb-2">{agent.name}</h3>
               <p className="text-gray-500 max-w-md mb-6 md:mb-8 leading-relaxed px-4">{agent.description}</p>
+              
+              {/* Show shared data indicator */}
+              {agent.id === 'step4' && sharedData?.step1Description && (
+                <div className="mb-6 px-4">
+                  <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-2 text-sm text-blue-700">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span>已自动获取 Step1 面板描述</span>
+                  </div>
+                </div>
+              )}
+              
+              {agent.id === 'step3' && sharedData?.step2Json && (
+                <div className="mb-6 px-4">
+                  <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-4 py-2 text-sm text-green-700">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    <span>已自动获取 Step2 需求 JSON</span>
+                  </div>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-lg px-4">
                 {getAgentConfig(agent.id).tips.map((tip, index) => (
@@ -742,9 +905,33 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                           : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none'
                       }`}
                     >
-                      <div className={`prose ${msg.role === 'user' ? 'prose-invert' : 'prose-slate'} max-w-none text-sm leading-relaxed break-words`}>
+                      <div id={`message-content-${msg.id}`} className={`prose ${msg.role === 'user' ? 'prose-invert' : 'prose-slate'} max-w-none text-sm leading-relaxed break-words notranslate`} translate="no">
                         <MessageContent content={msg.content} />
                       </div>
+                      {agent.id === 'step1' && msg.role === 'assistant' && msg.content && hasStep1Content(msg.content) && (
+                        <div className="mt-2 flex justify-end">
+                           <button
+                             onClick={() => handleDownloadMessageContent(msg.id, msg.timestamp)}
+                             className="flex items-center gap-1.5 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md transition-colors border border-blue-100"
+                             title="下载此回答为图片"
+                           >
+                             <Download className="w-3 h-3" />
+                             <span>下载图片</span>
+                           </button>
+                        </div>
+                      )}
+                      {agent.id === 'step2' && msg.role === 'assistant' && msg.content && hasJsonContent(msg.content) && (
+                        <div className="mt-2 flex justify-end">
+                           <button
+                             onClick={() => handleDownloadJson(msg.content, msg.timestamp)}
+                             className="flex items-center gap-1.5 px-2 py-1 text-xs text-green-600 hover:bg-green-50 rounded-md transition-colors border border-green-100"
+                             title="下载此回答为 JSON"
+                           >
+                             <Download className="w-3 h-3" />
+                             <span>下载 JSON</span>
+                           </button>
+                        </div>
+                      )}
                       {msg.attachments && msg.attachments.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2 max-w-full">
                           {msg.attachments.map((attachment, idx) => {
@@ -914,6 +1101,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
           </div>
           {isStep2PanelOpen && (
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0">
+              {sharedData?.step1Description && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-700">Step 1 面板描述</label>
+                  <div className="p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap">
+                    {sharedData.step1Description}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-gray-700">JSON Schema</label>
                 <textarea
