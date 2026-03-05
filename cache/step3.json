@@ -1,0 +1,20 @@
+[
+  {
+    "id": "welcome-step3",
+    "role": "assistant",
+    "content": "你好！我是 **搭建指引** 助手。面板搭建详细指引。请问有什么可以帮您？",
+    "timestamp": 1772619957392
+  },
+  {
+    "id": "1772621785838",
+    "role": "user",
+    "content": "你好",
+    "timestamp": 1772621785838
+  },
+  {
+    "id": "1772621787003",
+    "role": "assistant",
+    "content": "```\n当前未检测到与LabVIEW项目相关的具体需求，请提供您的LabVIEW项目需求描述以便进行功能解析与提炼。\n```\n<style>\n\n  .generate-button {\n    background-color: #007bff; /* 确定需求无误，生成前面板和程序框架图 */\n    color: white;\n    border: none;\n    padding: 10px 20px;\n    text-align: center;\n    text-decoration: none;\n    display: inline-block;\n    font-size: 16px;\n    margin: 4px 2px;\n    cursor: pointer;\n    border-radius: 5px;\n  }\n</style>\n\n\n<form action=\"/your-submission-url\" method=\"post\">\n  <input type=\"hidden\" name=\"User\" value=\"确定无误，生成前面板和程序框架图\">\n  <button type=\"submit\" class=\"generate-button\">确定无误，生成前面板和程序框架图</button>\n</form>",
+    "timestamp": 1772621787003
+  }
+]
