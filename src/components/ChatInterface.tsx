@@ -2,11 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import axios from 'axios';
-import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, MessageSquare } from 'lucide-react';
 import { type Message, type Agent } from '../types';
 
 interface ChatInterfaceProps {
   agent: Agent;
+  onOpenSidebar: () => void;
+  isDesktopSidebarOpen: boolean;
+  onToggleDesktopSidebar: () => void;
 }
 
 interface MessageContentProps {
@@ -15,7 +18,24 @@ interface MessageContentProps {
 
 const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
   if (!content.includes('<think>')) {
-    return <ReactMarkdown rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>;
+    return (
+      <ReactMarkdown 
+        rehypePlugins={[rehypeRaw]}
+        components={{
+          pre: ({ node, ...props }) => (
+            <pre {...props} className="overflow-x-auto text-xs md:text-sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
+          ),
+          code: ({ node, ...props }) => (
+            <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
+          ),
+          p: ({ node, ...props }) => (
+            <p {...props} className="break-words" style={{ overflowWrap: 'break-word' }} />
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    );
   }
 
   const parts = [];
@@ -51,33 +71,172 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
           return (
              <details key={index} className="mb-2 rounded-lg overflow-hidden border border-blue-100 bg-blue-50/50 group">
                <summary className="px-3 py-2 cursor-pointer text-xs font-medium text-blue-600 select-none hover:bg-blue-100/50 transition-colors flex items-center gap-2 list-none">
-                 <span className="opacity-70">💭 思考过程 (点击展开)</span>
+                 <span className="opacity-70">💭 思考过程(点击展开)</span>
                </summary>
-               <div className="p-3 text-gray-600 text-xs border-t border-blue-100/50 bg-white/50">
-                 <ReactMarkdown rehypePlugins={[rehypeRaw]}>{part.content}</ReactMarkdown>
+               <div className="p-2 md:p-3 text-gray-600 text-xs border-t border-blue-100/50 bg-white/50">
+                 <div className="min-w-0" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                   <ReactMarkdown 
+                     rehypePlugins={[rehypeRaw]}
+                     components={{
+                       pre: ({ node, ...props }) => (
+                         <pre {...props} className="overflow-x-auto text-xs md:text-sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
+                       ),
+                       code: ({ node, ...props }) => (
+                         <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
+                       ),
+                       p: ({ node, ...props }) => (
+                         <p {...props} className="break-words" style={{ overflowWrap: 'break-word' }} />
+                       ),
+                     }}
+                   >
+                     {part.content}
+                   </ReactMarkdown>
+                 </div>
                </div>
              </details>
           );
         }
-        return <ReactMarkdown key={index} rehypePlugins={[rehypeRaw]}>{part.content}</ReactMarkdown>;
+        return (
+          <div key={index} className="break-words min-w-0" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+            <ReactMarkdown 
+              rehypePlugins={[rehypeRaw]}
+              components={{
+                pre: ({ node, ...props }) => (
+                  <pre {...props} className="overflow-x-auto text-xs md:text-sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
+                ),
+                code: ({ node, ...props }) => (
+                  <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
+                ),
+                p: ({ node, ...props }) => (
+                  <p {...props} className="break-words" style={{ overflowWrap: 'break-word' }} />
+                ),
+              }}
+            >
+              {part.content}
+            </ReactMarkdown>
+          </div>
+        );
       })}
     </>
   );
 };
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string>('');
   
   // State for Step 2 inputs
   const [jsonSchema, setJsonSchema] = useState('');
   const [requestInput, setRequestInput] = useState('');
+  const [isStep2PanelOpen, setIsStep2PanelOpen] = useState(true);
+  const [isStep3PanelOpen, setIsStep3PanelOpen] = useState(true);
+
+  // Cache for image URLs from upload_file_id
+  const [imageUrlCache, setImageUrlCache] = useState<Map<string, string>>(new Map());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const generateUniqueId = () => {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  };
+
+  const getImageUrl = async (uploadFileId: string): Promise<string | null> => {
+    if (imageUrlCache.has(uploadFileId)) {
+      return imageUrlCache.get(uploadFileId) || null;
+    }
+    
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/files/${uploadFileId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${agent.apiKey}`,
+          },
+        }
+      );
+      if (response.data && response.data.url) {
+        setImageUrlCache(prev => new Map(prev).set(uploadFileId, response.data.url));
+        return response.data.url;
+      }
+    } catch (error) {
+      console.error('Failed to get image URL:', error);
+    }
+    return null;
+  };
+
+  // Load image URLs when messages change
+  useEffect(() => {
+    const loadImageUrls = async () => {
+      const newCache = new Map(imageUrlCache);
+      let needsUpdate = false;
+      
+      for (const msg of messages) {
+        if (msg.attachments) {
+          for (const att of msg.attachments) {
+            if (att.upload_file_id && !newCache.has(att.upload_file_id)) {
+              const url = await getImageUrl(att.upload_file_id);
+              if (url) {
+                newCache.set(att.upload_file_id, url);
+                needsUpdate = true;
+              }
+            }
+          }
+        }
+      }
+      
+      if (needsUpdate) {
+        setImageUrlCache(newCache);
+      }
+    };
+    
+    loadImageUrls();
+  }, [messages, agent.apiKey]);
+
+  const getAgentConfig = (id: string) => {
+    switch (id) {
+      case 'step1':
+        return {
+          icon: <FileText className="w-12 h-12 text-blue-500" />,
+          tips: ['上传前面板截图', '上传后面板截图', '分析 VI 结构'],
+          color: 'bg-blue-50 text-blue-600'
+        };
+      case 'step2':
+        return {
+          icon: <CheckSquare className="w-12 h-12 text-green-500" />,
+          tips: ['生成需求文档', '确认功能点', '优化参数配置'],
+          color: 'bg-green-50 text-green-600'
+        };
+      case 'step3':
+        return {
+          icon: <Layers className="w-12 h-12 text-purple-500" />,
+          tips: ['获取搭建步骤', '代码结构建议', '最佳实践指南'],
+          color: 'bg-purple-50 text-purple-600'
+        };
+      case 'step4':
+        return {
+          icon: <Bot className="w-12 h-12 text-orange-500" />,
+          tips: ['生成测试用例', '覆盖率分析', '边界条件检查'],
+          color: 'bg-orange-50 text-orange-600'
+        };
+      default:
+        return {
+          icon: <HelpCircle className="w-12 h-12 text-gray-500" />,
+          tips: ['LabVIEW 基础知识', '常见错误排查', '性能优化建议'],
+          color: 'bg-gray-50 text-gray-600'
+        };
+    }
+  };
+
+  const handleQuickAction = (text: string) => {
+    setInput(text);
+    // Optional: Auto-focus or auto-submit
+    // For now just set text to let user confirm
+  };
 
   // Load messages and conversationId from local server and localStorage
   useEffect(() => {
@@ -87,15 +246,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
         if (response.data && Array.isArray(response.data) && response.data.length > 0) {
           setMessages(response.data);
         } else {
-          // Default welcome message if no history exists
-          setMessages([
-            {
-              id: `welcome-${agent.id}`,
-              role: 'assistant',
-              content: `你好！我是 **${agent.name}** 助手。${agent.description}。请问有什么可以帮您？`,
-              timestamp: Date.now(),
-            },
-          ]);
+          setMessages([]);
         }
       } catch (error) {
         console.error('Failed to load history from server:', error);
@@ -104,14 +255,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
         if (savedMessages) {
           setMessages(JSON.parse(savedMessages));
         } else {
-          setMessages([
-            {
-              id: `welcome-${agent.id}`,
-              role: 'assistant',
-              content: `你好！我是 **${agent.name}** 助手。${agent.description}。请问有什么可以帮您？`,
-              timestamp: Date.now(),
-            },
-          ]);
+          setMessages([]);
         }
       }
     };
@@ -127,6 +271,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
     }
 
     setSelectedFile(null);
+    setPreviewUrl(null);
     setInput('');
     setJsonSchema('');
     setRequestInput('');
@@ -172,7 +317,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      
+      // Create preview URL for images
+      if (file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file);
+        setPreviewUrl(url);
+      } else {
+        setPreviewUrl(null);
+      }
+      
       e.target.value = '';
     }
   };
@@ -186,11 +341,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
       userContent = `[文件上传] ${selectedFile.name}`;
     }
 
+    let uploadFileId: string | undefined = undefined;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: userContent,
       timestamp: Date.now(),
+      attachments: selectedFile ? [{
+        type: selectedFile.type.startsWith('image/') ? 'image' : 'file',
+        url: previewUrl || undefined,
+        name: selectedFile.name,
+        upload_file_id: uploadFileId
+      }] : undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -234,6 +397,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
           );
 
           if (uploadResponse.data && uploadResponse.data.id) {
+            uploadFileId = uploadResponse.data.id;
             payload.files = [
               {
                 type: 'image',
@@ -241,6 +405,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
                 upload_file_id: uploadResponse.data.id,
               },
             ];
+            
+            // Update the user message with the upload_file_id
+            setMessages((prev) => prev.map(msg => 
+              msg.id === userMessage.id 
+                ? {
+                    ...msg,
+                    attachments: msg.attachments?.map(att => 
+                      att.name === selectedFile.name 
+                        ? { ...att, upload_file_id: uploadFileId }
+                        : att
+                    )
+                  }
+                : msg
+            ));
           }
         } catch (uploadError) {
           console.error('File upload failed:', uploadError);
@@ -368,7 +546,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
       let assistantMessageContent = '';
       
       // Create a placeholder message for the assistant
-      const assistantMessageId = Date.now().toString();
+      const assistantMessageId = generateUniqueId();
       const assistantMessage: Message = {
         id: assistantMessageId,
         role: 'assistant',
@@ -439,6 +617,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
     } finally {
       setIsLoading(false);
       setSelectedFile(null);
+      setPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -460,7 +639,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
         {
           id: `welcome-${agent.id}`,
           role: 'assistant',
-          content: `你好！我是 **${agent.name}** 助手。${agent.description}。请问有什么可以帮您？`,
+          content: `你好！我是 **${agent.name}** 助手，${agent.description}。请问有什么可以帮您？`,
           timestamp: Date.now(),
         },
       ]);
@@ -468,66 +647,213 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
   };
 
   return (
-    <div className="flex h-full bg-gray-50">
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex justify-between items-center z-10">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800 tracking-tight">{agent.name}</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{agent.description}</p>
+    <div className="flex flex-col lg:flex-row h-full bg-gray-50 overflow-hidden">
+      <div className={`flex-1 flex flex-col h-full overflow-hidden relative z-0 ${agent.id === 'step2' && !isStep2PanelOpen ? 'w-full' : 'w-full'}`}>
+        <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 md:py-4 shadow-sm flex justify-between items-center z-10 sticky top-0">
+          <div className="flex items-center gap-3">
+            {/* Mobile Sidebar Toggle */}
+            <button
+              onClick={onOpenSidebar}
+              className="md:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg active:bg-gray-200 transition-colors"
+              title="打开菜单"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            
+            {/* Desktop Sidebar Toggle */}
+            <button
+              onClick={onToggleDesktopSidebar}
+              className="hidden md:block p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg active:bg-gray-200 transition-colors mr-2"
+              title={isDesktopSidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h2 className="text-lg md:text-xl font-bold text-gray-800 tracking-tight">{agent.name}</h2>
+              <p className="text-xs md:text-sm text-gray-500 mt-0.5 line-clamp-1">{agent.description}</p>
+            </div>
           </div>
+          
           <button
             onClick={handleClearHistory}
-            className="p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 border border-transparent hover:border-red-100"
+            className="p-2 md:p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 border border-transparent hover:border-red-100"
             title="清除历史记录"
           >
             <Trash2 className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
-            >
-              <div
-                className={`max-w-[85%] lg:max-w-[75%] rounded-2xl px-6 py-4 shadow-sm ${
-                  msg.role === 'user'
-                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-none'
-                    : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none'
-                }`}
-              >
-                <div className={`prose ${msg.role === 'user' ? 'prose-invert' : 'prose-slate'} max-w-none text-sm leading-relaxed`}>
-                  <MessageContent content={msg.content} />
+        <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-3 md:space-y-6 scroll-smooth">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 md:p-8 animate-fade-in">
+              <div className={`p-4 md:p-6 rounded-3xl mb-4 md:mb-6 ${getAgentConfig(agent.id).color} bg-opacity-50`}>
+                {getAgentConfig(agent.id).icon}
+              </div>
+              <h3 className="text-xl md:text-2xl font-bold text-gray-800 mb-2">{agent.name}</h3>
+              <p className="text-gray-500 max-w-md mb-6 md:mb-8 leading-relaxed px-4">{agent.description}</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-lg px-4">
+                {getAgentConfig(agent.id).tips.map((tip, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleQuickAction(tip)}
+                    className="flex items-center gap-3 p-3 md:p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md hover:border-blue-200 transition-all text-left group"
+                  >
+                    <div className="p-2 bg-blue-50 rounded-lg text-blue-500 group-hover:bg-blue-100 transition-colors flex-shrink-0">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <span className="text-sm text-gray-600 font-medium group-hover:text-blue-700 transition-colors line-clamp-2">{tip}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <>
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in group`}
+                >
+                  <div className={`flex gap-2 md:gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                    {/* Avatar */}
+                    <div className={`flex-shrink-0 w-7 h-7 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-sm ${
+                      msg.role === 'user' 
+                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white' 
+                        : 'bg-white border border-gray-100'
+                    }`}>
+                      {msg.role === 'user' ? (
+                        <span className="text-[10px] md:text-xs font-bold">ME</span>
+                      ) : (
+                        <Bot className={`w-4 h-4 md:w-6 md:h-6 ${
+                          agent.id === 'step1' ? 'text-blue-500' :
+                          agent.id === 'step2' ? 'text-green-500' :
+                          agent.id === 'step3' ? 'text-purple-500' :
+                          agent.id === 'step4' ? 'text-orange-500' : 'text-gray-500'
+                        }`} />
+                      )}
+                    </div>
+
+                    {/* Message Bubble */}
+                    <div
+                      className={`rounded-2xl px-3 py-2 md:px-6 md:py-4 shadow-sm max-w-[85%] md:max-w-[75%] lg:max-w-[65%] ${
+                        msg.role === 'user'
+                          ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-none'
+                          : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none'
+                      }`}
+                    >
+                      <div className={`prose ${msg.role === 'user' ? 'prose-invert' : 'prose-slate'} max-w-none text-sm leading-relaxed break-words`}>
+                        <MessageContent content={msg.content} />
+                      </div>
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2 max-w-full">
+                          {msg.attachments.map((attachment, idx) => {
+                            // Prefer persistent URL from upload_file_id, fallback to direct URL
+                            const imageUrl = attachment.upload_file_id 
+                              ? imageUrlCache.get(attachment.upload_file_id) || attachment.url
+                              : attachment.url;
+                            
+                            // Skip if no valid URL
+                            if (!imageUrl) {
+                              return null;
+                            }
+                            
+                            // Skip blob URLs as they become invalid after page refresh
+                            if (imageUrl.startsWith('blob:')) {
+                              return null;
+                            }
+                            
+                            return attachment.type === 'image' ? (
+                              <div key={`${msg.id}-img-${idx}`} className="relative group w-full">
+                                <img 
+                                  src={imageUrl} 
+                                  alt={attachment.name || 'Uploaded image'}
+                                  className="w-full h-auto rounded-lg border border-blue-200 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+                                  style={{ maxWidth: '100%', objectFit: 'contain' }}
+                                  onClick={() => {
+                                    const newWindow = window.open();
+                                    if (newWindow) {
+                                      newWindow.document.write(`<img src="${imageUrl}" style="max-width:100%;height:auto;" />`);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <div key={`${msg.id}-file-${idx}`} className="flex items-center gap-2 bg-blue-50/50 px-3 py-2 rounded-lg text-xs text-blue-700 border border-blue-100 max-w-full">
+                                <FileText className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate">{attachment.name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex justify-start animate-pulse">
-              <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-none px-6 py-4 shadow-sm flex items-center gap-3 text-gray-500">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                <span className="text-sm font-medium">正在思考中...</span>
-              </div>
-            </div>
+              ))}
+              {isLoading && (
+                <div className="flex justify-start animate-pulse">
+                  <div className="flex gap-2 md:gap-3">
+                    <div className="flex-shrink-0 w-7 h-7 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-sm bg-white border border-gray-100">
+                      <Bot className={`w-4 h-4 md:w-6 md:h-6 ${
+                        agent.id === 'step1' ? 'text-blue-500' :
+                        agent.id === 'step2' ? 'text-green-500' :
+                        agent.id === 'step3' ? 'text-purple-500' :
+                        agent.id === 'step4' ? 'text-orange-500' : 'text-gray-500'
+                      }`} />
+                    </div>
+                    <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-none px-4 py-2 md:px-6 md:py-4 shadow-sm flex items-center gap-2 md:gap-3 text-gray-500 max-w-[85%] md:max-w-[75%]">
+                      <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin text-blue-500" />
+                      <span className="text-xs md:text-sm font-medium">正在思考中...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
-        <div className="bg-white border-t border-gray-200 p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
+        <div className="bg-white border-t border-gray-200 p-2 md:p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10 pb-safe">
           {selectedFile && (
-            <div className="mb-3 flex items-center gap-2 bg-blue-50 p-2.5 rounded-lg text-sm text-blue-700 max-w-max border border-blue-100 animate-slide-up">
-              <ImageIcon className="w-4 h-4" />
-              <span className="font-medium truncate max-w-[200px]">{selectedFile.name}</span>
-              <button 
-                onClick={() => setSelectedFile(null)}
-                className="ml-2 text-blue-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-red-50"
-              >
-                &times;
-              </button>
+            <div className="mb-2 md:mb-3 flex flex-col gap-2 animate-slide-up">
+              {previewUrl && (
+                <div className="relative inline-block max-w-[200px] md:max-w-[250px] rounded-lg overflow-hidden border border-blue-200 shadow-sm">
+                  <img 
+                    src={previewUrl} 
+                    alt="Preview" 
+                    className="max-w-full h-auto max-h-[200px] object-contain bg-gray-50"
+                  />
+                  <button 
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setPreviewUrl(null);
+                    }}
+                    className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-colors"
+                    title="移除图片"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+              {!previewUrl && (
+                <div className="flex items-center gap-2 bg-blue-50 p-2 md:p-2.5 rounded-lg text-xs md:text-sm text-blue-700 max-w-[calc(100%-1rem)] md:max-w-max border border-blue-100">
+                  <FileText className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" />
+                  <span className="font-medium truncate max-w-[calc(100%-60px)] md:max-w-[200px]">{selectedFile.name}</span>
+                  <button 
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setPreviewUrl(null);
+                    }}
+                    className="ml-auto md:ml-2 text-blue-400 hover:text-red-500 transition-colors p-1 rounded-full hover:bg-red-50 flex-shrink-0"
+                  >
+                    &times;
+                  </button>
+                </div>
+              )}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="flex gap-3 items-end">
+          <form onSubmit={handleSubmit} className="flex gap-1 md:gap-3 items-end">
             <input
               type="file"
               ref={fileInputRef}
@@ -538,12 +864,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-3 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all duration-200 border border-transparent hover:border-blue-100"
+              className="p-2 md:p-3 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all duration-200 border border-transparent hover:border-blue-100 flex-shrink-0"
               title="上传文件"
             >
-              <Paperclip className="w-6 h-6" />
+              <Paperclip className="w-5 h-5 md:w-6 md:h-6" />
             </button>
-            <div className="flex-1 relative">
+            <div className="flex-1 relative min-w-0">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -553,62 +879,61 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
                     handleSubmit(e);
                   }
                 }}
-                placeholder={`发送给 ${agent.name}... (Shift + Enter 换行)`}
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm resize-none min-h-[50px] max-h-[150px]"
+                placeholder={`发送给 ${agent.name}...`}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2 md:px-4 md:py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm resize-none min-h-[40px] md:min-h-[50px] max-h-[120px] md:max-h-[150px] text-sm md:text-base"
                 rows={1}
-                style={{ height: 'auto', minHeight: '50px' }} 
+                style={{ height: 'auto', minHeight: '40px' }} 
               />
             </div>
             <button
               type="submit"
               disabled={isLoading || (!input.trim() && !selectedFile)}
-              className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 shadow-md shadow-blue-200"
+              className="bg-blue-600 text-white p-2 md:p-3 rounded-xl hover:bg-blue-700 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 shadow-md shadow-blue-200 flex-shrink-0"
             >
-              <Send className="w-6 h-6" />
+              <Send className="w-5 h-5 md:w-6 md:h-6" />
             </button>
           </form>
         </div>
       </div>
 
       {agent.id === 'step2' && (
-        <div className="w-1/3 min-w-[320px] max-w-[450px] border-l border-gray-200 bg-gray-50/50 backdrop-blur-sm p-6 flex flex-col gap-6 overflow-y-auto shadow-inner">
-          <div className="flex items-center gap-2 border-b border-gray-200 pb-4">
-            <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
-            <h3 className="font-bold text-gray-800 text-lg">需求确认参数配置</h3>
+        <div className={`${isStep2PanelOpen ? 'w-full lg:w-80' : 'w-12 lg:w-12'} border-t lg:border-t-0 lg:border-l border-gray-200 bg-white flex flex-col overflow-hidden transition-all duration-300 flex-shrink-0`}>
+          <div 
+            className="p-4 border-b border-gray-200 sticky top-0 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors flex-shrink-0"
+            onClick={() => setIsStep2PanelOpen(!isStep2PanelOpen)}
+          >
+            {isStep2PanelOpen && (
+              <h3 className="font-bold text-gray-800 text-base flex items-center gap-2">
+                <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
+                需求配置
+              </h3>
+            )}
+            <button className="text-gray-500 hover:text-gray-700 transition-colors">
+              {isStep2PanelOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            </button>
           </div>
-          
-          <div className="flex flex-col gap-3 group">
-            <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              JSON Schema
-              <span className="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Optional</span>
-            </label>
-            <textarea
-              value={jsonSchema}
-              onChange={(e) => setJsonSchema(e.target.value)}
-              placeholder='{ "type": "object", ... }'
-              className="w-full h-48 p-4 border border-gray-300 rounded-xl text-sm font-mono bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm group-hover:border-gray-400 resize-y"
-            />
-          </div>
-
-          <div className="flex flex-col gap-3 group">
-            <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              Request (用户输入)
-              <span className="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Optional</span>
-            </label>
-            <textarea
-              value={requestInput}
-              onChange={(e) => setRequestInput(e.target.value)}
-              placeholder="请输入具体的需求描述..."
-              className="w-full h-48 p-4 border border-gray-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm group-hover:border-gray-400 resize-y"
-            />
-          </div>
-          
-          <div className="mt-auto bg-blue-50 border border-blue-100 rounded-xl p-4">
-            <h4 className="text-blue-800 font-medium text-sm mb-1">💡 操作提示</h4>
-            <p className="text-xs text-blue-600 leading-relaxed">
-              请在左侧聊天窗口上传面板截图。此处配置的参数将与图片一起发送给 AI 助手进行分析。
-            </p>
-          </div>
+          {isStep2PanelOpen && (
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-gray-700">JSON Schema</label>
+                <textarea
+                  value={jsonSchema}
+                  onChange={(e) => setJsonSchema(e.target.value)}
+                  placeholder='{ "type": "object", ... }'
+                  className="w-full h-20 p-2 border border-gray-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-gray-700">Request</label>
+                <textarea
+                  value={requestInput}
+                  onChange={(e) => setRequestInput(e.target.value)}
+                  placeholder="请输入具体的需求描述..."
+                  className="w-full h-20 p-2 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,8 +1,6 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  height: 100vh;
 }
 
 .logo {
@@ -39,4 +37,102 @@
 
 .read-the-docs {
   color: #888;
+}
+
+/* Mobile responsive optimizations for chat interface */
+@media (max-width: 768px) {
+  /* Ensure message content wraps properly */
+  .prose p {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  /* Prevent code blocks from overflowing */
+  .prose pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.5rem;
+  }
+
+  /* Ensure JSON and code content wraps */
+  .prose pre code {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.65rem;
+    line-height: 1.3;
+    max-width: 100%;
+  }
+
+  /* Fix for inline code */
+  .prose :not(pre) > code {
+    word-break: break-word;
+    white-space: normal;
+    padding: 0.2em 0.4em;
+    font-size: 0.85em;
+  }
+
+  /* Safe area padding for modern mobile devices */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  }
+}
+
+/* Global code block styling for all screen sizes */
+.prose pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+}
+
+.prose pre code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.prose code {
+  word-break: break-word;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Animation improvements */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out;
 }

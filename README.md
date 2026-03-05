@@ -28,6 +28,44 @@ This is the frontend for the LabVIEW Assistant, built with React, Vite, and Tail
 
 ## API Integration
 
-The API calls are currently mocked in `src/components/ChatInterface.tsx`. To integrate with Dify:
-1.  Uncomment the API call section in `handleSubmit`.
-2.  Add your Dify API keys and endpoints.
+The API calls are integrated with Dify in `src/components/ChatInterface.tsx`.
+
+## Deployment Instructions / 部署说明
+
+| 项目 | 版本 |
+| :--- | :--- |
+| Node.js | v18.20.7 |
+| npm | 10.8.2 |
+| Vite | ^5.4.19 |
+| React | ^19.2.0 |
+| Tailwind CSS | ^3.4.19 |
+| TypeScript | ~5.9.3 |
+| @vitejs/plugin-react | ^4.7.0 |
+
+### 部署步骤
+
+1.  **解压**
+    ```bash
+    tar xzf labview-project.tar.gz && cd labview
+    ```
+
+2.  **复制并编辑环境变量**
+    ```bash
+    cp .env.example .env
+    # 填入实际的 Dify API 地址和各 Agent 的 API Key
+    ```
+
+3.  **安装依赖**
+    ```bash
+    npm install
+    ```
+
+4.  **构建**
+    ```bash
+    npm run build
+    ```
+
+5.  **启动服务（端口 3001）**
+    ```bash
+    node server.js
+    ```

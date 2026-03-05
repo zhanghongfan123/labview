@@ -3,6 +3,12 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  attachments?: Array<{
+    type: 'image' | 'file';
+    url?: string;
+    name?: string;
+    upload_file_id?: string;
+  }>;
 }
 
 export interface Agent {
