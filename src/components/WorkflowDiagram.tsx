@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, ArrowDown, FileText, CheckSquare, Layers, Bot, HelpCircle, Upload, Download, ChevronRight, Share2, CornerDownRight } from 'lucide-react';
+import { ArrowRight, ArrowDown, FileText, CheckSquare, Layers, Bot, HelpCircle, Upload, Download, Share2, CornerDownRight } from 'lucide-react';
 
 const WorkflowDiagram: React.FC = () => {
   return (

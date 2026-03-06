@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import axios from 'axios';
 import * as htmlToImage from 'html-to-image';
-import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, MessageSquare, Download, BookmarkPlus, Check, Upload, Pencil, X, LayoutGrid } from 'lucide-react';
+import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, Download, BookmarkPlus, Check, Upload, Pencil, X, LayoutGrid } from 'lucide-react';
 import { type Message, type Agent, type SharedData, type SavedSchema, type SavedDiagram } from '../types';
 
 interface ChatInterfaceProps {
@@ -824,9 +824,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     }
   };
 
-  const handleDownloadStep1Data = () => {
-    // Deprecated global download
-  };
 
   const handleDownloadMessageContent = async (messageId: string, timestamp: number) => {
     const element = document.getElementById(`message-content-${messageId}`);

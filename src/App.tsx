@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import Home from './components/Home';
-import { AGENTS, HOME_AGENT, type Agent, type SharedData, type SavedSchema, type SavedDiagram } from './types';
+import { HOME_AGENT, type Agent, type SharedData, type SavedSchema, type SavedDiagram } from './types';
 
 // ── IndexedDB helpers ──────────────────────────────────────────────────────────
 const IDB_NAME = 'labview_assets';

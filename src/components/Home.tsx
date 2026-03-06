@@ -7,7 +7,7 @@ interface HomeProps {
   onOpenSidebar: () => void;
 }
 
-const Home: React.FC<HomeProps> = ({ onSelectAgent, onOpenSidebar }) => {
+const Home: React.FC<HomeProps> = ({ onOpenSidebar }) => {
   return (
     <div className="h-full flex flex-col bg-gray-50 relative">
       {/* Mobile Header with Menu Button */}
