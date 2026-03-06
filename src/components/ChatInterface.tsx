@@ -4,8 +4,8 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import axios from 'axios';
 import * as htmlToImage from 'html-to-image';
-import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, MessageSquare, Download } from 'lucide-react';
-import { type Message, type Agent, type SharedData } from '../types';
+import { Send, Paperclip, Loader2, Image as ImageIcon, Trash2, Menu, ChevronDown, ChevronUp, Bot, FileText, CheckSquare, Layers, HelpCircle, Sparkles, MessageSquare, Download, BookmarkPlus, Check, Upload, Pencil, X, LayoutGrid } from 'lucide-react';
+import { type Message, type Agent, type SharedData, type SavedSchema, type SavedDiagram } from '../types';
 
 interface ChatInterfaceProps {
   agent: Agent;
@@ -14,6 +14,12 @@ interface ChatInterfaceProps {
   onToggleDesktopSidebar: () => void;
   sharedData?: SharedData;
   updateSharedData?: (key: keyof SharedData, value: string) => void;
+  saveSchema?: (schema: SavedSchema) => void;
+  deleteSchema?: (schemaId: string) => void;
+  diagramSlots?: (SavedDiagram | null)[];
+  uploadDiagramToSlot?: (slotIdx: number, diagram: SavedDiagram) => void;
+  renameDiagram?: (slotIdx: number, name: string) => void;
+  deleteDiagram?: (slotIdx: number) => void;
 }
 
 interface MessageContentProps {
@@ -127,18 +133,40 @@ const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) =
   );
 });
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar, sharedData, updateSharedData }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar, sharedData, updateSharedData, saveSchema, deleteSchema, diagramSlots = [null, null, null], uploadDiagramToSlot, renameDiagram, deleteDiagram }) => {
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = localStorage.getItem(`chat_history_${agent.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string>('');
+  const [conversationId, setConversationId] = useState<string>(
+    () => localStorage.getItem(`chat_conversation_id_${agent.id}`) || ''
+  );
   
   // State for Step 2 inputs
   const [jsonSchema, setJsonSchema] = useState('');
   const [requestInput, setRequestInput] = useState('');
   const [isStep2PanelOpen, setIsStep2PanelOpen] = useState(true);
+
+  // State for right panel (shared across all steps)
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [activeSchemaId, setActiveSchemaId] = useState<string | null>(null);
+  const [expandedSchemaId, setExpandedSchemaId] = useState<string | null>(null);
+  const [savedMsgIds, setSavedMsgIds] = useState<Set<string>>(new Set());
+
+  // Diagram panel state
+  const [editingDiagramSlot, setEditingDiagramSlot] = useState<number | null>(null);
+  const [editingDiagramName, setEditingDiagramName] = useState('');
+  const [uploadingSlotIdx, setUploadingSlotIdx] = useState<number | null>(null);
+  const diagramInputRef = useRef<HTMLInputElement>(null);
+  const [isMobileAssetPanelOpen, setIsMobileAssetPanelOpen] = useState(false);
 
 
   // Cache for image URLs from upload_file_id
@@ -162,27 +190,42 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     return headers.some(header => cleanContent.includes(header)) && cleanContent.length > 50;
   };
 
-  const handleDownloadJson = (content: string, timestamp: number) => {
-    if (!content) return;
-    
-    // Filter out <think> tags if any
-    let cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-    
-    // Try to extract JSON if it's wrapped in markdown code blocks
-    const jsonMatch = cleanContent.match(/```json\n([\s\S]*?)\n```/) || cleanContent.match(/```\n([\s\S]*?)\n```/);
-    if (jsonMatch && jsonMatch[1]) {
-      cleanContent = jsonMatch[1];
-    }
 
-    const blob = new Blob([cleanContent], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `step2_requirements_${new Date(timestamp).toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDiagramSlotUpload = (slotIdx: number) => {
+    setUploadingSlotIdx(slotIdx);
+    diagramInputRef.current?.click();
+  };
+
+  const handleDiagramFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || uploadingSlotIdx === null) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      uploadDiagramToSlot?.(uploadingSlotIdx, {
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        dataUrl,
+        timestamp: Date.now(),
+      });
+    };
+    reader.readAsDataURL(file);
+    setUploadingSlotIdx(null);
+    e.target.value = '';
+  };
+
+  const handleSaveSchema = (msgId: string, content: string) => {
+    if (!saveSchema) return;
+    let cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    const jsonMatch = cleanContent.match(/```json\n([\s\S]*?)\n```/) || cleanContent.match(/```\n([\s\S]*?)\n```/);
+    const schemaContent = jsonMatch ? jsonMatch[1].trim() : cleanContent;
+    const schema: SavedSchema = {
+      id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+      content: schemaContent,
+      timestamp: Date.now(),
+    };
+    saveSchema(schema);
+    setSavedMsgIds(prev => new Set(prev).add(msgId));
   };
 
   const generateUniqueId = () => {
@@ -282,37 +325,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     // For now just set text to let user confirm
   };
 
-  // Load messages and conversationId from local server and localStorage
+  // Sync from server in background (localStorage already pre-loaded above)
   useEffect(() => {
-    const loadHistory = async () => {
+    const syncFromServer = async () => {
       try {
         const response = await axios.get(`/api/history/${agent.id}`);
         if (response.data && Array.isArray(response.data) && response.data.length > 0) {
           setMessages(response.data);
-        } else {
-          setMessages([]);
         }
-      } catch (error) {
-        console.error('Failed to load history from server:', error);
-        // Fallback to localStorage if server fails
-        const savedMessages = localStorage.getItem(`chat_history_${agent.id}`);
-        if (savedMessages) {
-          setMessages(JSON.parse(savedMessages));
-        } else {
-          setMessages([]);
-        }
+      } catch {
+        // localStorage fallback already shown, no action needed
       }
     };
 
-    loadHistory();
-
-    const savedConversationId = localStorage.getItem(`chat_conversation_id_${agent.id}`);
-    
-    if (savedConversationId) {
-      setConversationId(savedConversationId);
-    } else {
-      setConversationId('');
-    }
+    syncFromServer();
 
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -364,16 +390,51 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
       const file = e.target.files[0];
       setSelectedFile(file);
       
-      // Create preview URL for images
       if (file.type.startsWith('image/')) {
         const url = URL.createObjectURL(file);
         setPreviewUrl(url);
+
+        // Auto-save image to diagram library (max 3, replace oldest when full)
+        if (uploadDiagramToSlot) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const dataUrl = ev.target?.result as string;
+            const emptyIdx = diagramSlots.findIndex(s => s === null);
+            const targetSlot = emptyIdx !== -1
+              ? emptyIdx
+              : diagramSlots.reduce((oldestIdx, slot, idx) =>
+                  slot && diagramSlots[oldestIdx] && slot.timestamp < diagramSlots[oldestIdx]!.timestamp
+                    ? idx : oldestIdx, 0);
+            uploadDiagramToSlot(targetSlot, {
+              id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+              name: file.name.replace(/\.[^/.]+$/, ''),
+              dataUrl,
+              timestamp: Date.now(),
+            });
+          };
+          reader.readAsDataURL(file);
+        }
       } else {
         setPreviewUrl(null);
       }
       
       e.target.value = '';
     }
+  };
+
+  const handleUseLibraryImage = (dataUrl: string, name: string) => {
+    fetch(dataUrl)
+      .then(res => res.blob())
+      .then(blob => {
+        const file = new File([blob], `${name}.png`, { type: blob.type || 'image/png' });
+        setSelectedFile(file);
+        setPreviewUrl(dataUrl);
+        setIsMobileAssetPanelOpen(false);
+      })
+      .catch(() => {
+        setSelectedFile(null);
+        setPreviewUrl(dataUrl);
+      });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -541,9 +602,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
        }
       else if (agent.id === 'step3') {
         // Step 3: inputs: {} (Empty)
-        // Include Step2 JSON if available
-        if (sharedData?.step2Json) {
-          payload.query = `${userContent}\n\n以下是 Step2 生成的需求 JSON：\n${sharedData.step2Json}`;
+        // Use selected saved schema, or fallback to step2Json
+        const activeSchema = activeSchemaId
+          ? sharedData?.savedSchemas?.find(s => s.id === activeSchemaId)
+          : null;
+        const schemaContent = activeSchema?.content || sharedData?.step2Json;
+        if (schemaContent) {
+          payload.query = `${userContent}\n\n以下是 Step2 生成的需求 JSON：\n${schemaContent}`;
         }
       }
       else if (agent.id === 'step4') {
@@ -818,6 +883,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
           </div>
           
           <div className="flex items-center gap-2">
+            {/* Mobile asset panel toggle */}
+            {['step1','step2','step3','step4'].includes(agent.id) && (
+              <button
+                onClick={() => setIsMobileAssetPanelOpen(true)}
+                className="lg:hidden p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all duration-200 border border-transparent hover:border-blue-100"
+                title="素材库"
+              >
+                <LayoutGrid className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={handleClearHistory}
               className="p-2 md:p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 border border-transparent hover:border-red-100"
@@ -827,6 +902,52 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
             </button>
           </div>
         </div>
+
+        {agent.id === 'step2' && (
+          <div className="border-b border-gray-200 bg-white flex-shrink-0">
+            <button
+              type="button"
+              className="w-full px-4 md:px-6 py-2 md:py-3 flex items-start justify-between gap-3 hover:bg-gray-50 transition-colors text-left"
+              onClick={() => setIsStep2PanelOpen(!isStep2PanelOpen)}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-5 bg-blue-600 rounded-full flex-shrink-0"></div>
+                  <h3 className="font-bold text-gray-800 text-sm md:text-base">需求配置</h3>
+                </div>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  建议填写 <span className="font-semibold text-gray-700">JSON Schema</span> 和 <span className="font-semibold text-gray-700">Request</span>，生成效果更好。
+                </p>
+              </div>
+              <span className="mt-0.5 text-gray-500 flex-shrink-0">
+                {isStep2PanelOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+              </span>
+            </button>
+
+            {isStep2PanelOpen && (
+              <div className="px-4 pb-3 md:px-6 md:pb-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-700">JSON Schema</label>
+                  <textarea
+                    value={jsonSchema}
+                    onChange={(e) => setJsonSchema(e.target.value)}
+                    placeholder='{ "type": "object", ... }'
+                    className="w-full h-24 md:h-28 p-2 border border-gray-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none bg-white"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-700">Request</label>
+                  <textarea
+                    value={requestInput}
+                    onChange={(e) => setRequestInput(e.target.value)}
+                    placeholder="请输入具体的需求描述..."
+                    className="w-full h-24 md:h-28 p-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none bg-white"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-3 md:space-y-6 scroll-smooth">
           {messages.length === 0 ? (
@@ -921,15 +1042,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                         </div>
                       )}
                       {agent.id === 'step2' && msg.role === 'assistant' && msg.content && hasJsonContent(msg.content) && (
-                        <div className="mt-2 flex justify-end">
-                           <button
-                             onClick={() => handleDownloadJson(msg.content, msg.timestamp)}
-                             className="flex items-center gap-1.5 px-2 py-1 text-xs text-green-600 hover:bg-green-50 rounded-md transition-colors border border-green-100"
-                             title="下载此回答为 JSON"
-                           >
-                             <Download className="w-3 h-3" />
-                             <span>下载 JSON</span>
-                           </button>
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            onClick={() => handleSaveSchema(msg.id, msg.content)}
+                            className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors border ${
+                              savedMsgIds.has(msg.id)
+                                ? 'text-purple-400 border-purple-100 bg-purple-50 cursor-default'
+                                : 'text-purple-600 hover:bg-purple-50 border-purple-100'
+                            }`}
+                            title="保存到 Step3 方案槽位"
+                            disabled={savedMsgIds.has(msg.id)}
+                          >
+                            {savedMsgIds.has(msg.id) ? <Check className="w-3 h-3" /> : <BookmarkPlus className="w-3 h-3" />}
+                            <span>{savedMsgIds.has(msg.id) ? '已保存' : '保存 Schema'}</span>
+                          </button>
                         </div>
                       )}
                       {msg.attachments && msg.attachments.length > 0 && (
@@ -1083,56 +1209,285 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
         </div>
       </div>
 
-      {agent.id === 'step2' && (
-        <div className={`${isStep2PanelOpen ? 'w-full lg:w-80' : 'w-12 lg:w-12'} border-t lg:border-t-0 lg:border-l border-gray-200 bg-white flex flex-col overflow-hidden transition-all duration-300 flex-shrink-0`}>
-          <div 
-            className="p-4 border-b border-gray-200 sticky top-0 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors flex-shrink-0"
-            onClick={() => setIsStep2PanelOpen(!isStep2PanelOpen)}
-          >
-            {isStep2PanelOpen && (
-              <h3 className="font-bold text-gray-800 text-base flex items-center gap-2">
-                <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
-                需求配置
-              </h3>
-            )}
-            <button className="text-gray-500 hover:text-gray-700 transition-colors">
-              {isStep2PanelOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-            </button>
-          </div>
-          {isStep2PanelOpen && (
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0">
-              {sharedData?.step1Description && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-gray-700">Step 1 面板描述</label>
-                  <div className="p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {sharedData.step1Description}
-                  </div>
-                </div>
+      {/* Right panel: shared across all steps */}
+      {['step1','step2','step3','step4'].includes(agent.id) && (
+        <>
+          {/* Hidden diagram file input (shared between desktop & mobile) */}
+          <input
+            type="file"
+            ref={diagramInputRef}
+            onChange={handleDiagramFileSelect}
+            accept="image/*"
+            className="hidden"
+          />
+
+          {/* ── Desktop sidebar ── */}
+          <div className={`hidden lg:flex ${isRightPanelOpen ? 'w-72' : 'w-10'} border-l border-gray-200 bg-white flex-col overflow-hidden transition-all duration-300 flex-shrink-0`}>
+            <div
+              className="px-3 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors flex-shrink-0"
+              onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
+            >
+              {isRightPanelOpen && (
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">素材库</span>
               )}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-gray-700">JSON Schema</label>
-                <textarea
-                  value={jsonSchema}
-                  onChange={(e) => setJsonSchema(e.target.value)}
-                  placeholder='{ "type": "object", ... }'
-                  className="w-full h-20 p-2 border border-gray-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+              <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
+                {isRightPanelOpen ? <ChevronDown className="w-4 h-4 -rotate-90" /> : <ChevronUp className="w-4 h-4 -rotate-90" />}
+              </button>
+            </div>
+            {isRightPanelOpen && (
+              <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+                <AssetPanelContent
+                  agent={agent}
+                  diagramSlots={diagramSlots}
+                  editingDiagramSlot={editingDiagramSlot}
+                  editingDiagramName={editingDiagramName}
+                  setEditingDiagramSlot={setEditingDiagramSlot}
+                  setEditingDiagramName={setEditingDiagramName}
+                  handleDiagramSlotUpload={handleDiagramSlotUpload}
+                  renameDiagram={renameDiagram}
+                  deleteDiagram={deleteDiagram}
+                  sharedData={sharedData}
+                  activeSchemaId={activeSchemaId}
+                  setActiveSchemaId={setActiveSchemaId}
+                  expandedSchemaId={expandedSchemaId}
+                  setExpandedSchemaId={setExpandedSchemaId}
+                  onUseImage={handleUseLibraryImage}
+                  deleteSchema={deleteSchema}
                 />
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-gray-700">Request</label>
-                <textarea
-                  value={requestInput}
-                  onChange={(e) => setRequestInput(e.target.value)}
-                  placeholder="请输入具体的需求描述..."
-                  className="w-full h-20 p-2 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
-                />
+            )}
+          </div>
+
+          {/* ── Mobile bottom sheet ── */}
+          {isMobileAssetPanelOpen && (
+            <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
+              {/* Backdrop */}
+              <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+                onClick={() => setIsMobileAssetPanelOpen(false)}
+              />
+              {/* Sheet */}
+              <div className="relative bg-white rounded-t-2xl max-h-[82vh] flex flex-col shadow-2xl animate-slide-up">
+                {/* Handle */}
+                <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
+                  <div className="w-10 h-1 bg-gray-300 rounded-full" />
+                </div>
+                {/* Header */}
+                <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+                  <span className="font-semibold text-gray-800 text-sm">素材库</span>
+                  <button
+                    onClick={() => setIsMobileAssetPanelOpen(false)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto">
+                  <AssetPanelContent
+                    agent={agent}
+                    diagramSlots={diagramSlots}
+                    editingDiagramSlot={editingDiagramSlot}
+                    editingDiagramName={editingDiagramName}
+                    setEditingDiagramSlot={setEditingDiagramSlot}
+                    setEditingDiagramName={setEditingDiagramName}
+                    handleDiagramSlotUpload={handleDiagramSlotUpload}
+                    renameDiagram={renameDiagram}
+                    deleteDiagram={deleteDiagram}
+                    sharedData={sharedData}
+                    activeSchemaId={activeSchemaId}
+                    setActiveSchemaId={setActiveSchemaId}
+                    expandedSchemaId={expandedSchemaId}
+                    setExpandedSchemaId={setExpandedSchemaId}
+                    onUseImage={handleUseLibraryImage}
+                    deleteSchema={deleteSchema}
+                  />
+                </div>
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
 };
+
+// ── Shared panel content component ───────────────────────────────────────────
+interface AssetPanelContentProps {
+  agent: Agent;
+  diagramSlots: (SavedDiagram | null)[];
+  editingDiagramSlot: number | null;
+  editingDiagramName: string;
+  setEditingDiagramSlot: (v: number | null) => void;
+  setEditingDiagramName: (v: string) => void;
+  handleDiagramSlotUpload: (slotIdx: number) => void;
+  renameDiagram?: (slotIdx: number, name: string) => void;
+  deleteDiagram?: (slotIdx: number) => void;
+  sharedData?: SharedData;
+  activeSchemaId: string | null;
+  setActiveSchemaId: (v: string | null) => void;
+  expandedSchemaId: string | null;
+  setExpandedSchemaId: (v: string | null) => void;
+  onUseImage?: (dataUrl: string, name: string) => void;
+  deleteSchema?: (schemaId: string) => void;
+}
+
+const AssetPanelContent: React.FC<AssetPanelContentProps> = ({
+  agent, diagramSlots, editingDiagramSlot, editingDiagramName,
+  setEditingDiagramSlot, setEditingDiagramName, handleDiagramSlotUpload,
+  renameDiagram, deleteDiagram, sharedData,
+  activeSchemaId, setActiveSchemaId, expandedSchemaId, setExpandedSchemaId,
+  onUseImage, deleteSchema,
+}) => (
+  <div className="flex flex-col">
+    {/* ── 框图库 ── */}
+    <div className="p-3 flex flex-col gap-2">
+      <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+        <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
+        框图库
+      </p>
+      <div className="grid grid-cols-1 gap-2">
+        {[0, 1, 2].map((slotIdx) => {
+          const diagram = diagramSlots[slotIdx];
+          const isEditing = editingDiagramSlot === slotIdx;
+          return (
+            <div
+              key={slotIdx}
+              className={`rounded-xl border overflow-hidden transition-all ${
+                diagram ? 'border-gray-200 bg-white' : 'border-dashed border-gray-200 bg-gray-50/60'
+              }`}
+            >
+              {diagram ? (
+                <>
+                  <div className="relative group">
+                    <img src={diagram.dataUrl} alt={diagram.name} className="w-full h-28 object-cover" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center gap-2">
+                      {onUseImage && (
+                        <button
+                          onClick={() => onUseImage(diagram.dataUrl, diagram.name)}
+                          className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-blue-600/90 hover:bg-blue-700 px-2.5 py-1 rounded-md transition-all shadow-md"
+                        >
+                          使用
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { const w = window.open(); w?.document.write(`<img src="${diagram.dataUrl}" style="max-width:100%;height:auto;"/>`); }}
+                        className="opacity-0 group-hover:opacity-100 text-white text-xs font-medium bg-black/50 hover:bg-black/70 px-2 py-1 rounded-md transition-all"
+                      >
+                        查看
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-2 py-1.5 flex items-center gap-1">
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        value={editingDiagramName}
+                        onChange={(e) => setEditingDiagramName(e.target.value)}
+                        onBlur={() => {
+                          if (editingDiagramName.trim()) renameDiagram?.(slotIdx, editingDiagramName.trim());
+                          setEditingDiagramSlot(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') setEditingDiagramSlot(null);
+                        }}
+                        className="flex-1 text-xs border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-0"
+                      />
+                    ) : (
+                      <span className="flex-1 text-xs text-gray-700 font-medium truncate">{diagram.name}</span>
+                    )}
+                    <button onClick={() => { setEditingDiagramName(diagram.name); setEditingDiagramSlot(slotIdx); }} className="p-1 text-gray-400 hover:text-blue-500 transition-colors flex-shrink-0" title="重命名"><Pencil className="w-3 h-3" /></button>
+                    <button onClick={() => handleDiagramSlotUpload(slotIdx)} className="p-1 text-gray-400 hover:text-blue-500 transition-colors flex-shrink-0" title="替换"><Upload className="w-3 h-3" /></button>
+                    <button onClick={() => deleteDiagram?.(slotIdx)} className="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0" title="删除"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={() => handleDiagramSlotUpload(slotIdx)}
+                  className="w-full h-20 flex flex-col items-center justify-center gap-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50/50 transition-all"
+                >
+                  <Upload className="w-5 h-5" />
+                  <span className="text-xs">框图 {slotIdx + 1}</span>
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+
+    {/* ── 已保存方案 (step3 only) ── */}
+    {agent.id === 'step3' && (
+      <div className="p-3 pt-0 flex flex-col gap-2">
+        <div className="border-t border-gray-100 pt-3">
+          <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5 mb-1">
+            <BookmarkPlus className="w-3.5 h-3.5 text-purple-500" />
+            已保存方案
+          </p>
+          <p className="text-xs text-gray-400 mb-2 leading-relaxed">
+            点击<span className="font-semibold text-purple-600">「使用」</span>后发消息时自动带入。
+          </p>
+        </div>
+        {[0, 1, 2].map((slotIdx) => {
+          const schema = sharedData?.savedSchemas?.[slotIdx];
+          const isActive = schema && activeSchemaId === schema.id;
+          const isExpanded = schema && expandedSchemaId === schema.id;
+          return (
+            <div
+              key={slotIdx}
+              className={`rounded-xl border transition-all ${
+                schema
+                  ? isActive ? 'border-purple-400 bg-purple-50/60 shadow-sm' : 'border-gray-200 bg-white hover:border-purple-200'
+                  : 'border-dashed border-gray-200 bg-gray-50/50'
+              }`}
+            >
+              <div className="px-3 py-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${schema ? (isActive ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600') : 'bg-gray-100 text-gray-400'}`}>
+                    {slotIdx + 1}
+                  </span>
+                  {schema
+                    ? <span className="text-xs text-gray-400 truncate">{new Date(schema.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    : <span className="text-xs text-gray-400">空槽位</span>}
+                </div>
+                {schema && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => setExpandedSchemaId(isExpanded ? null : schema.id)} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (isActive) setActiveSchemaId(null);
+                        deleteSchema?.(schema.id);
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
+                      title="删除"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setActiveSchemaId(isActive ? null : schema.id)}
+                      className={`px-2 py-0.5 rounded-md text-xs font-medium transition-all border ${isActive ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700' : 'text-purple-600 border-purple-300 hover:bg-purple-50'}`}
+                    >
+                      {isActive ? <span className="flex items-center gap-1"><Check className="w-3 h-3" />用中</span> : '使用'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {schema && isExpanded && (
+                <div className="px-3 pb-3">
+                  <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-2 overflow-x-auto overflow-y-auto max-h-40 whitespace-pre-wrap break-words font-mono border border-gray-100">
+                    {schema.content}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+);
 
 export default ChatInterface;

@@ -19,9 +19,23 @@ export interface Agent {
   apiKey?: string;
 }
 
+export interface SavedSchema {
+  id: string;
+  content: string;
+  timestamp: number;
+}
+
+export interface SavedDiagram {
+  id: string;
+  name: string;
+  dataUrl: string;
+  timestamp: number;
+}
+
 export interface SharedData {
   step1Description: string;
   step2Json: string;
+  savedSchemas: SavedSchema[];
 }
 
 export type AgentId = 'home' | 'step1' | 'step2' | 'step3' | 'step4' | 'help';
