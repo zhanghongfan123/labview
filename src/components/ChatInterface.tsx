@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -25,6 +25,220 @@ interface ChatInterfaceProps {
 interface MessageContentProps {
   content: string;
 }
+
+const STEP2_REQUEST_TEMPLATE = `【备注】请用户根据模板改写。
+
+表单补充：第 0 部分 - 大背景与基本功能
+这部分不需要懂编程，只需要用大白话描述这个项目的背景。
+
+1. 这个程序的文件名是什么？
+（初学者填表提示：LabVIEW 的 VI 文件名通常直接暴露核心功能，比如 PID_Temp_Control.vi 或 Motor_Simulation.vi。）
+2. 用一句话大白话描述：它是干什么用的？
+（初学者填表提示：例如“交通灯倒计时模拟器”“读取温度传感器的程序”“生成正弦波并滤除噪声的仿真”。）
+3. 它是纯软件仿真，还是连着真实硬件？
+（初学者填表提示：是否连接 DAQ、串口线或测试设备；没有就是纯软件仿真。）
+4. 这个程序是从哪来的？
+（初学者填表提示：教材课后题、开源代码、或公司现有模板。）
+
+第一部分：前面板（Front Panel）
+输入区（你能改动的内容）：
+- 有哪些按钮（开关、启动/停止）？
+- 有哪些可输入数字的框或旋钮？
+- 有下拉菜单吗？菜单里有哪些选项？
+
+输出区（程序显示给你的内容）：
+- 有没有波形图表（Graph/Chart）？有几根线？坐标轴代表什么？
+- 有没有指示灯（亮/灭）？
+- 有没有单独显示结果的数字框或字符串框？
+
+第二部分：运行逻辑
+点击左上角白色箭头运行后，程序表现是什么？
+- 启动与停止：瞬间结束还是持续运行直到按停止？
+- 因果关系：改动输入后，图表或数字发生了什么对应变化？
+- 报错情况：运行中是否有弹窗报错？如有请附错误代码或截图描述。
+
+第三部分：程序框图（Block Diagram）
+- 整体框架：是否有包裹其他代码的大方框？描述边界颜色/形状。
+- 关键颜色与线条：主要连线颜色是什么？是否有粗线（数组）？
+- 子模块（SubVI）：有没有小正方形图标？图标上有哪些英文单词？
+
+第四部分：你的新需求（你想改什么？）
+- 想增加什么新功能？
+- 想修改什么旧功能？`;
+
+const STEP2_JSON_SCHEMA_TEMPLATE = `{
+  "$id": "",
+  "schemaVersion": "0.1.0",
+  "tips": [
+    "这是‘现有VI反向描述模板’，用于把一个VI完整映射成结构化信息。",
+    "初学者可以只填 frontPanel + architecture + flowSummary；智能体也能开始工作。",
+    "想做到单射：尽量补全 modules + resources + stateMachine + keyWires。"
+  ],
+  "meta": {
+    "viName": "",
+    "lvprojName": "",
+    "labviewVersion": "",
+    "target": "Windows",
+    "dependencies": ["NI-VISA"],
+    "oneLinePurpose": "",
+    "authorOrOwner": "",
+    "lastKnownWorking": true
+  },
+  "frontPanel": {
+    "__comment": "把前面板当成‘接口层’：控件=输入，指示器=输出。每个元素都给唯一id，最好与终端名一致。",
+    "controls": [
+      {
+        "id": "",
+        "label": "",
+        "kind": "NumericControl",
+        "dataType": "DBL",
+        "unit": "",
+        "default": null,
+        "range": { "min": null, "max": null },
+        "isRequiredToRun": false,
+        "triggersEvent": "None",
+        "notes": ""
+      }
+    ],
+    "indicators": [
+      {
+        "id": "",
+        "label": "",
+        "kind": "WaveformGraph",
+        "dataType": "Waveform",
+        "updateRateHzEstimate": null,
+        "notes": ""
+      }
+    ],
+    "uiRules": {
+      "__comment": "把你观察到的禁用规则、可见性、属性节点写出来；不知道就留空。",
+      "enableDisableRules": [
+        { "elementId": "", "enabledWhen": "" }
+      ],
+      "elementsProgrammaticallyWritten": [
+        { "elementId": "", "how": "PropertyNode|LocalVariable|Value(Signaling)", "notes": "" }
+      ]
+    }
+  },
+  "architecture": {
+    "__comment": "宏观结构：你看到的 while/event/case/producer-consumer/state-machine 等。",
+    "pattern": "EventDriven_StateMachine",
+    "topLevelStructures": [
+      { "id": "mainLoop", "type": "WhileLoop", "notes": "" },
+      { "id": "event", "type": "EventStructure", "notes": "" },
+      { "id": "case", "type": "CaseStructure", "notes": "" }
+    ],
+    "stopCondition": {
+      "type": "StopButton|Error|Count|ExternalSignal|Other",
+      "details": ""
+    },
+    "timing": {
+      "loopWaitMsEstimate": null,
+      "timedLoop": false,
+      "notes": ""
+    }
+  },
+  "stateMachine": {
+    "__comment": "如果没有状态机，就填 enabled=false。若有：列出状态名、进入条件、退出条件。",
+    "enabled": true,
+    "stateType": "Enum|String|Integer|QMH_Message",
+    "states": [
+      {
+        "name": "Idle",
+        "runsWhere": "CaseStructure",
+        "does": "更新UI/等待开始",
+        "entryCondition": "",
+        "exitCondition": ""
+      }
+    ],
+    "eventsToStateTransitions": [
+      {
+        "uiEvent": "startBtn.ValueChange",
+        "fromState": "Idle",
+        "toState": "Run",
+        "condition": "params valid"
+      }
+    ],
+    "errorHandlingState": "Error",
+    "shutdownState": "Shutdown"
+  },
+  "modules": {
+    "__comment": "模块=可读的功能块。初学者只需要列关键模块：采集/配置/计算/显示/存盘/通信/安全停机。",
+    "list": [
+      {
+        "id": "m1",
+        "name": "",
+        "type": "SubVI|DAQmx|VISA|FileIO|Math|UIUpdate|Custom",
+        "responsibility": "",
+        "runsIn": { "structureId": "case", "caseOrState": "Run|EVT_Start|Timeout" },
+        "inputs": [
+          { "name": "", "dataType": "", "source": "control|wire|constant|resource" }
+        ],
+        "outputs": [
+          { "name": "", "dataType": "", "dest": "indicator|wire|resource" }
+        ],
+        "sideEffects": ["UI", "File", "DAQ", "Network", "Log"],
+        "failureBehavior": "propagateError|retry|ignore|enterSafeState",
+        "notes": ""
+      }
+    ]
+  },
+  "keyWires": {
+    "__comment": "只写关键数据流，不用把所有线写出来。尤其要写 error wire 是否贯穿。",
+    "errorWire": {
+      "policy": "贯穿|部分贯穿|不使用",
+      "centralHandlerModuleId": "",
+      "notes": ""
+    },
+    "dataPaths": [
+      {
+        "name": "MainMeasurementPath",
+        "from": ["control:vStart", "control:vStop"],
+        "throughModules": ["m_validate", "m_sweep", "m_plot"],
+        "to": ["indicator:ivGraph", "file:csv"]
+      }
+    ],
+    "messagePassing": [
+      {
+        "kind": "Queue|Notifier|UserEvent|ChannelWire",
+        "name": "",
+        "producer": "",
+        "consumer": "",
+        "payloadType": "",
+        "notes": ""
+      }
+    ]
+  },
+  "resources": {
+    "__comment": "资源生命周期是VI稳定性的核心。尽量填：在哪开、在哪关、异常是否也会关。",
+    "list": [
+      {
+        "id": "visa0",
+        "type": "VISA|DAQTask|File|TCP|UDP|Camera|Other",
+        "openWhere": "Connect|Init|OnDemand",
+        "closeWhere": "Shutdown|Finally|OnDemand",
+        "mustCloseOnError": true,
+        "configNotes": ""
+      }
+    ]
+  },
+  "flowSummary": {
+    "__comment": "把VI运行流程写成 6~12 步。越具体越好（尤其是触发点和安全态）。",
+    "steps": [
+      "启动VI，初始化UI为Idle。",
+      "用户点击Connect，打开VISA会话并查询设备信息。",
+      "用户设置扫描参数并点击Start，进入Run状态。",
+      "Run状态循环执行：设置输出→等待稳定→测量→更新图→缓存数据。",
+      "Stop或Error触发：进入安全态，输出置零/停止任务/关闭资源。",
+      "保存数据文件并退出或回到Idle。"
+    ]
+  },
+  "knownIssuesAndChangeRequests": {
+    "__comment": "这部分直接喂给智能体做改造规划。",
+    "knownIssues": ["运行时UI卡顿", "偶发设备断连后无法恢复"],
+    "desiredChanges": ["增加过流保护", "增加自动保存参数快照", "重构为producer-consumer"]
+  }
+}`;
 
 const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) => {
   const parts = [];
@@ -75,16 +289,16 @@ const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) =
                      remarkPlugins={[remarkGfm]}
                      rehypePlugins={[rehypeRaw]}
                      components={{
-                       pre: ({ node, ...props }) => (
+                      pre: ({ ...props }) => (
                          <pre {...props} className="overflow-x-auto text-xs md:text-sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
                        ),
-                       code: ({ node, ...props }) => (
+                      code: ({ ...props }) => (
                          <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
                        ),
-                       form: ({ node, ...props }) => (
+                      form: ({ ...props }) => (
                          <form {...props} onSubmit={(e) => { e.preventDefault(); console.log('Form submission prevented'); }} />
                        ),
-                       button: ({ node, ...props }) => (
+                      button: ({ ...props }) => (
                          <button {...props} type="button" onClick={(e) => {
                            // If it's the "Generate" button, maybe we want to do something?
                            // For now, just prevent default submission
@@ -107,16 +321,16 @@ const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) =
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeRaw]}
               components={{
-                pre: ({ node, ...props }) => (
+                pre: ({ ...props }) => (
                   <pre {...props} className="overflow-x-auto text-xs md:text-sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
                 ),
-                code: ({ node, ...props }) => (
+                code: ({ ...props }) => (
                   <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
                 ),
-                form: ({ node, ...props }) => (
+                form: ({ ...props }) => (
                   <form {...props} onSubmit={(e) => { e.preventDefault(); console.log('Form submission prevented'); }} />
                 ),
-                button: ({ node, ...props }) => (
+                button: ({ ...props }) => (
                   <button {...props} type="button" onClick={(e) => {
                     e.preventDefault();
                     console.log('Button clicked:', e.currentTarget.innerText);
@@ -152,7 +366,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
   
   // State for Step 2 inputs
   const [jsonSchema, setJsonSchema] = useState('');
-  const [requestInput, setRequestInput] = useState('');
+  const [requestInput, setRequestInput] = useState(() => agent.id === 'step2' ? STEP2_REQUEST_TEMPLATE : '');
   const [isStep2PanelOpen, setIsStep2PanelOpen] = useState(true);
 
   // State for right panel (shared across all steps)
@@ -216,7 +430,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
   const handleSaveSchema = (msgId: string, content: string) => {
     if (!saveSchema) return;
-    let cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     const jsonMatch = cleanContent.match(/```json\n([\s\S]*?)\n```/) || cleanContent.match(/```\n([\s\S]*?)\n```/);
     const schemaContent = jsonMatch ? jsonMatch[1].trim() : cleanContent;
     const schema: SavedSchema = {
@@ -232,14 +446,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
   };
 
-  const getImageUrl = async (uploadFileId: string): Promise<string | null> => {
+  const getImageUrl = useCallback(async (uploadFileId: string): Promise<string | null> => {
     if (imageUrlCache.has(uploadFileId)) {
       return imageUrlCache.get(uploadFileId) || null;
     }
     
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/files/${uploadFileId}`,
+        `/dify-api/files/${uploadFileId}`,
         {
           headers: {
             'Authorization': `Bearer ${agent.apiKey}`,
@@ -254,7 +468,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
       console.error('Failed to get image URL:', error);
     }
     return null;
-  };
+  }, [agent.apiKey, imageUrlCache]);
 
   // Load image URLs when messages change
   useEffect(() => {
@@ -282,7 +496,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     };
     
     loadImageUrls();
-  }, [messages, agent.apiKey]);
+  }, [messages, getImageUrl, imageUrlCache]);
 
   const getAgentConfig = (id: string) => {
     switch (id) {
@@ -325,13 +539,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     // For now just set text to let user confirm
   };
 
+  const persistHistory = useCallback(async (history: Message[]) => {
+    if (history.length === 0) return;
+    localStorage.setItem(`chat_history_${agent.id}`, JSON.stringify(history));
+    try {
+      await axios.post(`/api/history/${agent.id}`, history);
+    } catch (error) {
+      console.error('Failed to save history to server:', error);
+    }
+  }, [agent.id]);
+
+  const getHistoryTimestamp = (history: Message[]) => {
+    if (history.length === 0) return 0;
+    return history[history.length - 1]?.timestamp || 0;
+  };
+
   // Sync from server in background (localStorage already pre-loaded above)
   useEffect(() => {
     const syncFromServer = async () => {
       try {
+        const localRaw = localStorage.getItem(`chat_history_${agent.id}`);
+        const localHistory: Message[] = localRaw ? JSON.parse(localRaw) : [];
         const response = await axios.get(`/api/history/${agent.id}`);
-        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-          setMessages(response.data);
+        if (response.data && Array.isArray(response.data)) {
+          const serverHistory = response.data as Message[];
+          const serverTs = getHistoryTimestamp(serverHistory);
+          const localTs = getHistoryTimestamp(localHistory);
+          const preferredHistory = localTs > serverTs ? localHistory : serverHistory;
+
+          if (preferredHistory.length > 0) {
+            setMessages(preferredHistory);
+          }
+          if (localTs > serverTs) {
+            await persistHistory(localHistory);
+          }
         }
       } catch {
         // localStorage fallback already shown, no action needed
@@ -344,28 +585,34 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     setPreviewUrl(null);
     setInput('');
     setJsonSchema('');
-    setRequestInput('');
-  }, [agent]);
+    setRequestInput(agent.id === 'step2' ? STEP2_REQUEST_TEMPLATE : '');
+  }, [agent, persistHistory]);
 
   // Save messages to local server and localStorage
   useEffect(() => {
     const saveHistory = async () => {
-      if (messages.length > 0) {
-        // Save to localStorage as backup/fast access
-        localStorage.setItem(`chat_history_${agent.id}`, JSON.stringify(messages));
-        
-        // Save to local server
-        try {
-          await axios.post(`/api/history/${agent.id}`, messages);
-        } catch (error) {
-          console.error('Failed to save history to server:', error);
-        }
-      }
+      await persistHistory(messages);
     };
 
     // Debounce saving to avoid too many requests during streaming
-    const timeoutId = setTimeout(saveHistory, 1000);
+    const timeoutId = setTimeout(saveHistory, 300);
     return () => clearTimeout(timeoutId);
+  }, [messages, persistHistory]);
+
+  useEffect(() => {
+    const flushHistoryOnUnload = () => {
+      if (messages.length === 0) return;
+      const payload = JSON.stringify(messages);
+      localStorage.setItem(`chat_history_${agent.id}`, payload);
+      navigator.sendBeacon(
+        `/api/history/${agent.id}`,
+        new Blob([payload], { type: 'application/json' })
+      );
+    };
+    window.addEventListener('beforeunload', flushHistoryOnUnload);
+    return () => {
+      window.removeEventListener('beforeunload', flushHistoryOnUnload);
+    };
   }, [messages, agent.id]);
 
   // Save conversationId to localStorage
@@ -443,7 +690,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
     let userContent = input;
     if (!userContent.trim() && selectedFile) {
-      userContent = `[文件上传] ${selectedFile.name}`;
+      userContent = selectedFile.name;
     }
 
     let uploadFileId: string | undefined = undefined;
@@ -473,7 +720,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
       }
 
       // Prepare payload for Dify API
-      const payload: any = {
+      const payload: {
+        inputs: Record<string, unknown>;
+        query: string;
+        response_mode: 'streaming';
+        user: string;
+        files: Array<{
+          type: 'image' | 'file';
+          transfer_method: 'local_file' | 'remote_url';
+          upload_file_id?: string;
+          url?: string;
+        }>;
+        conversation_id?: string;
+      } = {
         inputs: {},
         query: userContent,
         response_mode: "streaming",
@@ -672,7 +931,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                 continue;
               }
             }
-          } catch (e) {
+          } catch {
             // Ignore json parse error
           }
         }
@@ -690,7 +949,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
             if (errorData && errorData.code) {
                errorMsg += ` (Code: ${errorData.code})`;
             }
-          } catch (e) {
+          } catch {
             // Ignore json parse error
           }
         }
@@ -924,21 +1183,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
             {isStep2PanelOpen && (
               <div className="px-4 pb-3 md:px-6 md:pb-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-gray-700">JSON Schema</label>
+                  <div className="h-7 flex items-center justify-between gap-2">
+                    <label className="text-xs font-semibold text-gray-700">JSON Schema</label>
+                    <button
+                      type="button"
+                      onClick={() => setJsonSchema(STEP2_JSON_SCHEMA_TEMPLATE)}
+                      className="text-[11px] leading-none px-2 py-1 rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap shrink-0"
+                    >
+                      一键填充模板
+                    </button>
+                  </div>
                   <textarea
                     value={jsonSchema}
                     onChange={(e) => setJsonSchema(e.target.value)}
                     placeholder='{ "type": "object", ... }'
-                    className="w-full h-24 md:h-28 p-2 border border-gray-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none bg-white"
+                    className="w-full h-56 md:h-64 p-2 border border-gray-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none bg-white"
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-gray-700">Request</label>
+                  <div className="h-7 flex items-center justify-between gap-2">
+                    <label className="text-xs font-semibold text-gray-700">Request</label>
+                    <span className="text-[11px] leading-none text-amber-600 whitespace-nowrap shrink-0">备注：请用户根据模板改写。</span>
+                  </div>
                   <textarea
                     value={requestInput}
                     onChange={(e) => setRequestInput(e.target.value)}
-                    placeholder="请输入具体的需求描述..."
-                    className="w-full h-24 md:h-28 p-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none bg-white"
+                    className="w-full h-56 md:h-64 p-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none bg-white whitespace-pre-wrap"
                   />
                 </div>
               </div>

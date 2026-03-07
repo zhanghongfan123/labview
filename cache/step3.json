@@ -4,5 +4,17 @@
     "role": "assistant",
     "content": "你好！我是 **搭建指引** 助手，面板搭建详细指引。请问有什么可以帮您？",
     "timestamp": 1772785161580
+  },
+  {
+    "id": "1772862382908",
+    "role": "user",
+    "content": "1",
+    "timestamp": 1772862382908
+  },
+  {
+    "id": "mmfwhmdz4iagfkrtnht",
+    "role": "assistant",
+    "content": "```\n名称：温度单位转换演示（While 循环 + 条件结构）\n\n功能描述：\n1. 用户通过前面板上的“Temperature”数值滑块输入温度值，作为转换的原始温度。\n2. 用户通过“Boolean”布尔开关选择不同的转换方向（True 时进行华氏度转摄氏度）。\n3. 程序在 While 循环中持续运行，循环延时时间由“milliseconds to wait”数值控件设定（单位：毫秒）。\n4. 当“Boolean”开关为 True 时，程序将“Temperature”输入值按照公式 (Temperature - 32) * (5 / 9) 转换为摄氏度，并通过“Thermometer”温度计控件实时显示结果。\n5. 用户点击“stop”按钮后，While 循环终止，程序停止运行。\n```\n<style>\n\n  .generate-button {\n    background-color: #007bff; /* 确定需求无误，生成前面板和程序框架图 */\n    color: white;\n    border: none;\n    padding: 10px 20px;\n    text-align: center;\n    text-decoration: none;\n    display: inline-block;\n    font-size: 16px;\n    margin: 4px 2px;\n    cursor: pointer;\n    border-radius: 5px;\n  }\n</style>\n\n\n<form action=\"/your-submission-url\" method=\"post\">\n  <input type=\"hidden\" name=\"User\" value=\"确定无误，生成前面板和程序框架图\">\n  <button type=\"submit\" class=\"generate-button\">确定无误，生成前面板和程序框架图</button>\n</form>",
+    "timestamp": 1772862384023
   }
 ]

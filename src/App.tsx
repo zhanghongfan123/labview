@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import Home from './components/Home';
-import { HOME_AGENT, type Agent, type SharedData, type SavedSchema, type SavedDiagram } from './types';
+import { AGENTS, HOME_AGENT, type Agent, type SharedData, type SavedSchema, type SavedDiagram } from './types';
 
 // ── IndexedDB helpers ──────────────────────────────────────────────────────────
 const IDB_NAME = 'labview_assets';
@@ -167,30 +167,31 @@ function App() {
         onMobileClose={() => setIsMobileSidebarOpen(false)}
       />
       <main className="flex-1 h-full w-full relative">
-        {currentAgent.id === 'home' ? (
-          <div className="h-full w-full overflow-y-auto">
-            <Home 
-              onSelectAgent={setCurrentAgent} 
+        <div className={`${currentAgent.id === 'home' ? 'h-full w-full overflow-y-auto' : 'hidden'}`}>
+          <Home 
+            onSelectAgent={setCurrentAgent} 
+            onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+          />
+        </div>
+
+        {AGENTS.map((agent) => (
+          <div key={agent.id} className={`${currentAgent.id === agent.id ? 'h-full w-full' : 'hidden'}`}>
+            <ChatInterface 
+              agent={agent} 
               onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+              isDesktopSidebarOpen={isDesktopSidebarOpen}
+              onToggleDesktopSidebar={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
+              sharedData={sharedData}
+              updateSharedData={updateSharedData}
+              saveSchema={saveSchema}
+              deleteSchema={deleteSchema}
+              diagramSlots={diagramSlots}
+              uploadDiagramToSlot={uploadDiagramToSlot}
+              renameDiagram={renameDiagram}
+              deleteDiagram={deleteDiagram}
             />
           </div>
-        ) : (
-          <ChatInterface 
-            key={currentAgent.id}
-            agent={currentAgent} 
-            onOpenSidebar={() => setIsMobileSidebarOpen(true)}
-            isDesktopSidebarOpen={isDesktopSidebarOpen}
-            onToggleDesktopSidebar={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
-            sharedData={sharedData}
-            updateSharedData={updateSharedData}
-            saveSchema={saveSchema}
-            deleteSchema={deleteSchema}
-            diagramSlots={diagramSlots}
-            uploadDiagramToSlot={uploadDiagramToSlot}
-            renameDiagram={renameDiagram}
-            deleteDiagram={deleteDiagram}
-          />
-        )}
+        ))}
       </main>
     </div>
   );

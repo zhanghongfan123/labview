@@ -1,9 +1,10 @@
 import React from 'react';
 import { Menu } from 'lucide-react';
 import WorkflowDiagram from './WorkflowDiagram';
+import { type Agent } from '../types';
 
 interface HomeProps {
-  onSelectAgent: (agent: any) => void;
+  onSelectAgent: (agent: Agent) => void;
   onOpenSidebar: () => void;
 }
 

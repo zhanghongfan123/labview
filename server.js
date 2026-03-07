@@ -18,7 +18,7 @@ app.use((req, res, next) => {
 });
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '20mb' }));
 
 // Log static file path
 console.log('Serving static files from:', path.join(__dirname, 'dist'));
