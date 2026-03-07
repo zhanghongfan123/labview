@@ -157,6 +157,21 @@ function App() {
     });
   };
 
+  const renameSchema = (schemaId: string, name: string) => {
+    setSharedData(prev => {
+      const updated = (prev.savedSchemas || []).map(schema =>
+        schema.id === schemaId ? { ...schema, name } : schema
+      );
+      const newData = { ...prev, savedSchemas: updated };
+      try {
+        localStorage.setItem('labview_shared_data', JSON.stringify(newData));
+      } catch (e) {
+        console.error('Failed to rename schema:', e);
+      }
+      return newData;
+    });
+  };
+
   return (
     <div className="flex h-screen bg-gray-100 font-sans overflow-hidden">
       <Sidebar 
@@ -185,6 +200,7 @@ function App() {
               updateSharedData={updateSharedData}
               saveSchema={saveSchema}
               deleteSchema={deleteSchema}
+              renameSchema={renameSchema}
               diagramSlots={diagramSlots}
               uploadDiagramToSlot={uploadDiagramToSlot}
               renameDiagram={renameDiagram}

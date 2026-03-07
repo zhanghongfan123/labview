@@ -8,7 +8,7 @@ interface HomeProps {
   onOpenSidebar: () => void;
 }
 
-const Home: React.FC<HomeProps> = ({ onOpenSidebar }) => {
+const Home: React.FC<HomeProps> = ({ onSelectAgent, onOpenSidebar }) => {
   return (
     <div className="h-full flex flex-col bg-gray-50 relative">
       {/* Mobile Header with Menu Button */}
@@ -22,7 +22,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSidebar }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center min-h-screen">
-        <WorkflowDiagram />
+        <WorkflowDiagram onSelectAgent={onSelectAgent} />
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
   {
     "id": "welcome-help",
     "role": "assistant",
-    "content": "你好！我是 **LabVIEW 助手** 助手，通用 LabVIEW 问答助手。请问有什么可以帮您？",
-    "timestamp": 1772785177904
+    "content": "你好！我是 **辅助问答（Help）** 助手，问答式用户使用手册。请问有什么可以帮您？",
+    "timestamp": 1772869247132
   }
 ]

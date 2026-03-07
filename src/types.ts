@@ -21,6 +21,7 @@ export interface Agent {
 
 export interface SavedSchema {
   id: string;
+  name?: string;
   content: string;
   timestamp: number;
 }
@@ -73,8 +74,8 @@ export const AGENTS: Agent[] = [
   },
   {
     id: 'help',
-    name: 'LabVIEW 助手',
-    description: '通用 LabVIEW 问答助手',
+    name: '辅助问答（Help）',
+    description: '问答式用户使用手册',
     apiKey: import.meta.env.VITE_API_KEY_HELP,
   },
 ];

@@ -16,6 +16,7 @@ interface ChatInterfaceProps {
   updateSharedData?: (key: keyof SharedData, value: string) => void;
   saveSchema?: (schema: SavedSchema) => void;
   deleteSchema?: (schemaId: string) => void;
+  renameSchema?: (schemaId: string, name: string) => void;
   diagramSlots?: (SavedDiagram | null)[];
   uploadDiagramToSlot?: (slotIdx: number, diagram: SavedDiagram) => void;
   renameDiagram?: (slotIdx: number, name: string) => void;
@@ -24,9 +25,10 @@ interface ChatInterfaceProps {
 
 interface MessageContentProps {
   content: string;
+  onAction?: (text: string) => void;
 }
 
-const STEP2_REQUEST_TEMPLATE = `【备注】请用户根据模板改写。
+const STEP2_REQUEST_TEMPLATE = `
 
 表单补充：第 0 部分 - 大背景与基本功能
 这部分不需要懂编程，只需要用大白话描述这个项目的背景。
@@ -240,7 +242,7 @@ const STEP2_JSON_SCHEMA_TEMPLATE = `{
   }
 }`;
 
-const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) => {
+const MessageContent: React.FC<MessageContentProps> = React.memo(({ content, onAction }) => {
   const parts = [];
   let currentText = content;
   
@@ -296,14 +298,12 @@ const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) =
                          <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
                        ),
                       form: ({ ...props }) => (
-                         <form {...props} onSubmit={(e) => { e.preventDefault(); console.log('Form submission prevented'); }} />
+                        <form {...props} onSubmit={(e) => { e.preventDefault(); }} />
                        ),
                       button: ({ ...props }) => (
                          <button {...props} type="button" onClick={(e) => {
-                           // If it's the "Generate" button, maybe we want to do something?
-                           // For now, just prevent default submission
                            e.preventDefault();
-                           console.log('Button clicked:', e.currentTarget.innerText);
+                          onAction?.(e.currentTarget.innerText);
                          }} />
                        ),
                      }}
@@ -328,12 +328,12 @@ const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) =
                   <code {...props} className="break-words" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
                 ),
                 form: ({ ...props }) => (
-                  <form {...props} onSubmit={(e) => { e.preventDefault(); console.log('Form submission prevented'); }} />
+                  <form {...props} onSubmit={(e) => { e.preventDefault(); }} />
                 ),
                 button: ({ ...props }) => (
                   <button {...props} type="button" onClick={(e) => {
                     e.preventDefault();
-                    console.log('Button clicked:', e.currentTarget.innerText);
+                    onAction?.(e.currentTarget.innerText);
                   }} />
                 ),
               }}
@@ -347,7 +347,7 @@ const MessageContent: React.FC<MessageContentProps> = React.memo(({ content }) =
   );
 });
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar, sharedData, updateSharedData, saveSchema, deleteSchema, diagramSlots = [null, null, null], uploadDiagramToSlot, renameDiagram, deleteDiagram }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isDesktopSidebarOpen, onToggleDesktopSidebar, sharedData, updateSharedData, saveSchema, deleteSchema, renameSchema, diagramSlots = [null, null, null], uploadDiagramToSlot, renameDiagram, deleteDiagram }) => {
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
       const saved = localStorage.getItem(`chat_history_${agent.id}`);
@@ -368,11 +368,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
   const [jsonSchema, setJsonSchema] = useState('');
   const [requestInput, setRequestInput] = useState(() => agent.id === 'step2' ? STEP2_REQUEST_TEMPLATE : '');
   const [isStep2PanelOpen, setIsStep2PanelOpen] = useState(true);
+  const [autoUseStep1Description, setAutoUseStep1Description] = useState(true);
 
   // State for right panel (shared across all steps)
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [activeSchemaId, setActiveSchemaId] = useState<string | null>(null);
   const [expandedSchemaId, setExpandedSchemaId] = useState<string | null>(null);
+  const [editingSchemaId, setEditingSchemaId] = useState<string | null>(null);
+  const [editingSchemaName, setEditingSchemaName] = useState('');
+  const [inputBoxHeight, setInputBoxHeight] = useState(52);
+  const [isInputResizing, setIsInputResizing] = useState(false);
   const [savedMsgIds, setSavedMsgIds] = useState<Set<string>>(new Set());
 
   // Diagram panel state
@@ -388,6 +393,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const markdownActionTextRef = useRef<string | null>(null);
+  const inputResizeStartYRef = useRef(0);
+  const inputResizeStartHeightRef = useRef(52);
 
   const hasJsonContent = (content: string) => {
     if (!content) return false;
@@ -435,6 +444,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
     const schemaContent = jsonMatch ? jsonMatch[1].trim() : cleanContent;
     const schema: SavedSchema = {
       id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+      name: `需求JSON ${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
       content: schemaContent,
       timestamp: Date.now(),
     };
@@ -535,9 +545,41 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
   const handleQuickAction = (text: string) => {
     setInput(text);
-    // Optional: Auto-focus or auto-submit
-    // For now just set text to let user confirm
   };
+
+  const handleMarkdownAction = (text: string) => {
+    const actionText = text.trim();
+    if (!actionText) return;
+    if (isLoading) return;
+    markdownActionTextRef.current = actionText;
+    setInput(actionText);
+    setTimeout(() => {
+      formRef.current?.requestSubmit();
+    }, 0);
+  };
+
+  const handleInputResizeStart = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    inputResizeStartYRef.current = e.clientY;
+    inputResizeStartHeightRef.current = inputBoxHeight;
+    setIsInputResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isInputResizing) return;
+    const handleMove = (e: PointerEvent) => {
+      const maxAvailableHeight = Math.max(160, Math.floor(window.innerHeight * 0.7));
+      const nextHeight = Math.max(44, Math.min(maxAvailableHeight, inputResizeStartHeightRef.current - (e.clientY - inputResizeStartYRef.current)));
+      setInputBoxHeight(nextHeight);
+    };
+    const handleUp = () => setIsInputResizing(false);
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [isInputResizing]);
 
   const persistHistory = useCallback(async (history: Message[]) => {
     if (history.length === 0) return;
@@ -686,12 +728,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!input.trim() && !selectedFile) || isLoading) return;
+    const forcedActionText = markdownActionTextRef.current?.trim() || '';
+    if ((!input.trim() && !selectedFile && !forcedActionText) || isLoading) return;
 
-    let userContent = input;
+    let userContent = forcedActionText || input;
     if (!userContent.trim() && selectedFile) {
       userContent = selectedFile.name;
     }
+    markdownActionTextRef.current = null;
 
     let uploadFileId: string | undefined = undefined;
 
@@ -832,20 +876,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
       } 
       else if (agent.id === 'step2') {
          // Step 2: inputs: { json_schema: string, request: string, pic: file }
-         // Validation: Must have file on first turn (unless user says otherwise, but we enforce it here based on previous requests)
-         if (!conversationId && !hasFile) {
-            const errorMessage: Message = {
-               id: Date.now().toString(),
-               role: 'assistant',
-               content: `请上传面板截图（与第一步相同的图片），以便进行需求确认。`,
-               timestamp: Date.now(),
-             };
-             setMessages((prev) => [...prev, errorMessage]);
-             setIsLoading(false);
-             return;
-         }
- 
-         // Use manual inputs for Step 2
          payload.inputs['json_schema'] = jsonSchema || "{}"; 
          payload.inputs['request'] = requestInput || userContent; 
          
@@ -861,29 +891,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
        }
       else if (agent.id === 'step3') {
         // Step 3: inputs: {} (Empty)
-        // Use selected saved schema, or fallback to step2Json
-        const activeSchema = activeSchemaId
-          ? sharedData?.savedSchemas?.find(s => s.id === activeSchemaId)
-          : null;
-        const schemaContent = activeSchema?.content || sharedData?.step2Json;
-        if (schemaContent) {
-          payload.query = `${userContent}\n\n以下是 Step2 生成的需求 JSON：\n${schemaContent}`;
-        }
+        // No automatic JSON injection - user must manually select from saved schemas if needed
       }
       else if (agent.id === 'step4') {
         // Step 4: inputs: { sd: file }
-        // Validation: Must have file on first turn
-        if (!conversationId && !hasFile) {
-           const errorMessage: Message = {
-              id: Date.now().toString(),
-              role: 'assistant',
-              content: `请上传面板截图以便生成测试方案。`,
-              timestamp: Date.now(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
-            setIsLoading(false);
-            return;
-        }
         if (hasFile) {
            payload.inputs['sd'] = [{
                type: 'image',
@@ -893,7 +904,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
         }
         
         // Include Step1 description if available
-        if (sharedData?.step1Description) {
+        if (autoUseStep1Description && sharedData?.step1Description) {
           payload.query = `${userContent}\n\n以下是 Step1 生成的面板描述：\n${sharedData.step1Description}`;
         }
       }
@@ -1226,21 +1237,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
               <p className="text-gray-500 max-w-md mb-6 md:mb-8 leading-relaxed px-4">{agent.description}</p>
               
               {/* Show shared data indicator */}
-              {agent.id === 'step4' && sharedData?.step1Description && (
+              {agent.id === 'step4' && (
                 <div className="mb-6 px-4">
-                  <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-2 text-sm text-blue-700">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                    <span>已自动获取 Step1 面板描述</span>
-                  </div>
+                  <label className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-2 text-sm text-blue-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoUseStep1Description}
+                      onChange={(e) => setAutoUseStep1Description(e.target.checked)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    <span>是否自动获取 Step1 面板描述</span>
+                  </label>
                 </div>
               )}
               
-              {agent.id === 'step3' && sharedData?.step2Json && (
+              {agent.id === 'step3' && (
                 <div className="mb-6 px-4">
-                  <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-4 py-2 text-sm text-green-700">
-                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                    <span>已自动获取 Step2 需求 JSON</span>
-                  </div>
+                  <div className="text-xs text-gray-500">请从右侧素材库选择需求 JSON 或直接输入</div>
                 </div>
               )}
               
@@ -1294,7 +1307,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                       }`}
                     >
                       <div id={`message-content-${msg.id}`} className={`prose ${msg.role === 'user' ? 'prose-invert' : 'prose-slate'} max-w-none text-sm leading-relaxed break-words notranslate`} translate="no">
-                        <MessageContent content={msg.content} />
+                        <MessageContent content={msg.content} onAction={handleMarkdownAction} />
                       </div>
                       {agent.id === 'step1' && msg.role === 'assistant' && msg.content && hasStep1Content(msg.content) && (
                         <div className="mt-2 flex justify-end">
@@ -1433,7 +1446,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
               )}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="flex gap-1 md:gap-3 items-end">
+          <form ref={formRef} onSubmit={handleSubmit} className="flex gap-1 md:gap-3 items-end">
             <input
               type="file"
               ref={fileInputRef}
@@ -1450,6 +1463,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
               <Paperclip className="w-5 h-5 md:w-6 md:h-6" />
             </button>
             <div className="flex-1 relative min-w-0">
+              <div className="mb-1 flex justify-center">
+                <button
+                  type="button"
+                  onPointerDown={handleInputResizeStart}
+                  className="h-1.5 w-12 rounded-full bg-gray-300 hover:bg-gray-400 active:bg-gray-500 cursor-ns-resize"
+                  aria-label="调整输入框高度"
+                />
+              </div>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1460,9 +1481,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                   }
                 }}
                 placeholder={`发送给 ${agent.name}...`}
-                className="w-full border border-gray-300 rounded-xl px-3 py-2 md:px-4 md:py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm resize-none min-h-[40px] md:min-h-[50px] max-h-[120px] md:max-h-[150px] text-sm md:text-base"
+                className="w-full border border-gray-300 rounded-xl px-3 py-2 md:px-4 md:py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm overflow-hidden text-sm md:text-base"
                 rows={1}
-                style={{ height: 'auto', minHeight: '40px' }} 
+                style={{ height: `${inputBoxHeight}px`, minHeight: '44px', resize: 'none' }}
               />
             </div>
             <button
@@ -1505,6 +1526,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
               <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
                 <AssetPanelContent
                   agent={agent}
+                  currentJsonSchema={jsonSchema}
                   diagramSlots={diagramSlots}
                   editingDiagramSlot={editingDiagramSlot}
                   editingDiagramName={editingDiagramName}
@@ -1518,8 +1540,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                   setActiveSchemaId={setActiveSchemaId}
                   expandedSchemaId={expandedSchemaId}
                   setExpandedSchemaId={setExpandedSchemaId}
+                  editingSchemaId={editingSchemaId}
+                  setEditingSchemaId={setEditingSchemaId}
+                  editingSchemaName={editingSchemaName}
+                  setEditingSchemaName={setEditingSchemaName}
                   onUseImage={handleUseLibraryImage}
+                  onUseSchemaContent={setInput}
                   deleteSchema={deleteSchema}
+                  renameSchema={renameSchema}
                 />
               </div>
             )}
@@ -1553,6 +1581,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                 <div className="flex-1 overflow-y-auto">
                   <AssetPanelContent
                     agent={agent}
+                    currentJsonSchema={jsonSchema}
                     diagramSlots={diagramSlots}
                     editingDiagramSlot={editingDiagramSlot}
                     editingDiagramName={editingDiagramName}
@@ -1566,8 +1595,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                     setActiveSchemaId={setActiveSchemaId}
                     expandedSchemaId={expandedSchemaId}
                     setExpandedSchemaId={setExpandedSchemaId}
+                    editingSchemaId={editingSchemaId}
+                    setEditingSchemaId={setEditingSchemaId}
+                    editingSchemaName={editingSchemaName}
+                    setEditingSchemaName={setEditingSchemaName}
                     onUseImage={handleUseLibraryImage}
+                    onUseSchemaContent={setInput}
                     deleteSchema={deleteSchema}
+                    renameSchema={renameSchema}
                   />
                 </div>
               </div>
@@ -1582,6 +1617,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
 // ── Shared panel content component ───────────────────────────────────────────
 interface AssetPanelContentProps {
   agent: Agent;
+  currentJsonSchema?: string;
   diagramSlots: (SavedDiagram | null)[];
   editingDiagramSlot: number | null;
   editingDiagramName: string;
@@ -1595,23 +1631,30 @@ interface AssetPanelContentProps {
   setActiveSchemaId: (v: string | null) => void;
   expandedSchemaId: string | null;
   setExpandedSchemaId: (v: string | null) => void;
+  editingSchemaId: string | null;
+  setEditingSchemaId: (v: string | null) => void;
+  editingSchemaName: string;
+  setEditingSchemaName: (v: string) => void;
   onUseImage?: (dataUrl: string, name: string) => void;
+  onUseSchemaContent?: (content: string) => void;
   deleteSchema?: (schemaId: string) => void;
+  renameSchema?: (schemaId: string, name: string) => void;
 }
 
 const AssetPanelContent: React.FC<AssetPanelContentProps> = ({
-  agent, diagramSlots, editingDiagramSlot, editingDiagramName,
+  agent, currentJsonSchema, diagramSlots, editingDiagramSlot, editingDiagramName,
   setEditingDiagramSlot, setEditingDiagramName, handleDiagramSlotUpload,
   renameDiagram, deleteDiagram, sharedData,
   activeSchemaId, setActiveSchemaId, expandedSchemaId, setExpandedSchemaId,
-  onUseImage, deleteSchema,
+  editingSchemaId, setEditingSchemaId, editingSchemaName, setEditingSchemaName,
+  onUseImage, onUseSchemaContent, deleteSchema, renameSchema,
 }) => (
   <div className="flex flex-col">
-    {/* ── 框图库 ── */}
+    {/* ── 图库 ── */}
     <div className="p-3 flex flex-col gap-2">
       <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
         <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-        框图库
+        图库
       </p>
       <div className="grid grid-cols-1 gap-2">
         {[0, 1, 2].map((slotIdx) => {
@@ -1675,7 +1718,7 @@ const AssetPanelContent: React.FC<AssetPanelContentProps> = ({
                   className="w-full h-20 flex flex-col items-center justify-center gap-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50/50 transition-all"
                 >
                   <Upload className="w-5 h-5" />
-                  <span className="text-xs">框图 {slotIdx + 1}</span>
+                  <span className="text-xs">图 {slotIdx + 1}</span>
                 </button>
               )}
             </div>
@@ -1684,22 +1727,31 @@ const AssetPanelContent: React.FC<AssetPanelContentProps> = ({
       </div>
     </div>
 
-    {/* ── 已保存方案 (step3 only) ── */}
-    {agent.id === 'step3' && (
+    {/* ── 需求 JSON 库 (step2/step3) ── */}
+    {['step2', 'step3'].includes(agent.id) && (
       <div className="p-3 pt-0 flex flex-col gap-2">
         <div className="border-t border-gray-100 pt-3">
           <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5 mb-1">
             <BookmarkPlus className="w-3.5 h-3.5 text-purple-500" />
-            已保存方案
+            需求 JSON 库
           </p>
           <p className="text-xs text-gray-400 mb-2 leading-relaxed">
-            点击<span className="font-semibold text-purple-600">「使用」</span>后发消息时自动带入。
+            Step2 可保存，Step3 点击<span className="font-semibold text-purple-600">「使用」</span>后发消息自动带入。
           </p>
         </div>
+        {agent.id === 'step2' && currentJsonSchema?.trim() && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/50">
+            <div className="px-3 py-2 text-xs font-semibold text-blue-700 border-b border-blue-100">当前编辑 JSON Schema</div>
+            <pre className="text-xs text-gray-700 p-2 overflow-x-auto overflow-y-auto max-h-32 whitespace-pre-wrap break-words font-mono">
+              {currentJsonSchema}
+            </pre>
+          </div>
+        )}
         {[0, 1, 2].map((slotIdx) => {
           const schema = sharedData?.savedSchemas?.[slotIdx];
           const isActive = schema && activeSchemaId === schema.id;
           const isExpanded = schema && expandedSchemaId === schema.id;
+          const isEditing = schema && editingSchemaId === schema.id;
           return (
             <div
               key={slotIdx}
@@ -1714,12 +1766,39 @@ const AssetPanelContent: React.FC<AssetPanelContentProps> = ({
                   <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${schema ? (isActive ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600') : 'bg-gray-100 text-gray-400'}`}>
                     {slotIdx + 1}
                   </span>
-                  {schema
-                    ? <span className="text-xs text-gray-400 truncate">{new Date(schema.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                    : <span className="text-xs text-gray-400">空槽位</span>}
+                  {schema ? (
+                    isEditing ? (
+                      <input
+                        autoFocus
+                        value={editingSchemaName}
+                        onChange={(e) => setEditingSchemaName(e.target.value)}
+                        onBlur={() => {
+                          if (editingSchemaName.trim()) renameSchema?.(schema.id, editingSchemaName.trim());
+                          setEditingSchemaId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') setEditingSchemaId(null);
+                        }}
+                        className="text-xs border border-purple-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-400 min-w-0"
+                      />
+                    ) : (
+                      <span className="text-xs text-gray-400 truncate">{schema.name || new Date(schema.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    )
+                  ) : <span className="text-xs text-gray-400">空槽位</span>}
                 </div>
                 {schema && (
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        setEditingSchemaName(schema.name || '');
+                        setEditingSchemaId(schema.id);
+                      }}
+                      className="p-1 text-gray-400 hover:text-purple-600 rounded transition-colors"
+                      title="重命名"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={() => setExpandedSchemaId(isExpanded ? null : schema.id)} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
@@ -1734,7 +1813,11 @@ const AssetPanelContent: React.FC<AssetPanelContentProps> = ({
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => setActiveSchemaId(isActive ? null : schema.id)}
+                      onClick={() => {
+                        const nextIsActive = !isActive;
+                        setActiveSchemaId(nextIsActive ? schema.id : null);
+                        onUseSchemaContent?.(nextIsActive ? schema.content : '');
+                      }}
                       className={`px-2 py-0.5 rounded-md text-xs font-medium transition-all border ${isActive ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700' : 'text-purple-600 border-purple-300 hover:bg-purple-50'}`}
                     >
                       {isActive ? <span className="flex items-center gap-1"><Check className="w-3 h-3" />用中</span> : '使用'}

@@ -1,7 +1,19 @@
 import React from 'react';
 import { ArrowRight, ArrowDown, FileText, CheckSquare, Layers, Bot, HelpCircle, Upload, Download, Share2, CornerDownRight } from 'lucide-react';
+import { AGENTS, type Agent } from '../types';
 
-const WorkflowDiagram: React.FC = () => {
+interface WorkflowDiagramProps {
+  onSelectAgent: (agent: Agent) => void;
+}
+
+const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ onSelectAgent }) => {
+  const handleSelectAgent = (agentId: string) => {
+    const targetAgent = AGENTS.find((agent) => agent.id === agentId);
+    if (targetAgent) {
+      onSelectAgent(targetAgent);
+    }
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-gradient-to-br from-slate-50 via-blue-50/50 to-purple-50/50 rounded-3xl p-4 md:p-8 overflow-hidden">
       <div className="text-center mb-6 md:mb-8 flex-shrink-0">
@@ -52,7 +64,7 @@ const WorkflowDiagram: React.FC = () => {
           <div className="absolute inset-0 pointer-events-none">
             {/* Step1 */}
             <div className="absolute left-[5%] top-[20%] w-[17%] pointer-events-auto group">
-              <div className="relative bg-white border-2 border-blue-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-blue-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-blue-400">
+              <div onClick={() => handleSelectAgent('step1')} className="relative bg-white border-2 border-blue-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-blue-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-blue-400 cursor-pointer">
                 <div className="absolute -top-3 -right-3 w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">1</div>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center">
@@ -69,7 +81,7 @@ const WorkflowDiagram: React.FC = () => {
             
             {/* Step2 */}
             <div className="absolute left-[32%] top-[20%] w-[17%] pointer-events-auto group">
-              <div className="relative bg-white border-2 border-green-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-green-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-green-400">
+              <div onClick={() => handleSelectAgent('step2')} className="relative bg-white border-2 border-green-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-green-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-green-400 cursor-pointer">
                 <div className="absolute -top-3 -right-3 w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">2</div>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-12 h-12 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center">
@@ -86,7 +98,7 @@ const WorkflowDiagram: React.FC = () => {
             
             {/* Step3 */}
             <div className="absolute left-[59%] top-[20%] w-[17%] pointer-events-auto group">
-              <div className="relative bg-white border-2 border-purple-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-purple-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-purple-400">
+              <div onClick={() => handleSelectAgent('step3')} className="relative bg-white border-2 border-purple-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-purple-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-purple-400 cursor-pointer">
                 <div className="absolute -top-3 -right-3 w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">3</div>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-12 h-12 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center">
@@ -103,7 +115,7 @@ const WorkflowDiagram: React.FC = () => {
             
             {/* Step4 */}
             <div className="absolute left-[59%] top-[55%] w-[17%] pointer-events-auto group">
-              <div className="relative bg-white border-2 border-orange-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-orange-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-orange-400">
+              <div onClick={() => handleSelectAgent('step4')} className="relative bg-white border-2 border-orange-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-orange-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-orange-400 cursor-pointer">
                 <div className="absolute -top-3 -right-3 w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">4</div>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-orange-200 rounded-xl flex items-center justify-center">
@@ -120,17 +132,17 @@ const WorkflowDiagram: React.FC = () => {
             
             {/* Help */}
             <div className="absolute left-[38%] top-[82%] w-[24%] pointer-events-auto group">
-              <div className="relative bg-white border-2 border-gray-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-gray-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-gray-400">
+              <div onClick={() => handleSelectAgent('help')} className="relative bg-white border-2 border-gray-200 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:shadow-gray-100 transition-all duration-300 transform hover:-translate-y-1 hover:border-gray-400 cursor-pointer">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center">
                     <HelpCircle className="w-6 h-6 text-gray-600" />
                   </div>
                   <div>
-                    <span className="font-bold text-gray-800 text-base">Help</span>
-                    <p className="text-xs text-gray-600 font-medium">帮助智能体</p>
+                    <span className="font-bold text-gray-800 text-base">辅助问答（Help）</span>
+                    <p className="text-xs text-gray-600 font-medium">问答式用户使用手册</p>
                   </div>
                 </div>
-                <p className="text-sm text-gray-600 leading-relaxed">独立功能，随时回答LabVIEW相关问题</p>
+                <p className="text-sm text-gray-600 leading-relaxed">问答式用户使用手册</p>
               </div>
             </div>
           </div>
@@ -142,7 +154,7 @@ const WorkflowDiagram: React.FC = () => {
             
             {/* Step 1 */}
             <div className="relative">
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex gap-4 items-start relative z-10">
+              <div onClick={() => handleSelectAgent('step1')} className="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex gap-4 items-start relative z-10 cursor-pointer">
                 <div className="flex-shrink-0 w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center border border-blue-100">
                   <FileText className="w-6 h-6 text-blue-600" />
                 </div>
@@ -164,7 +176,7 @@ const WorkflowDiagram: React.FC = () => {
 
             {/* Step 2 */}
             <div className="relative">
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-green-100 flex gap-4 items-start relative z-10">
+              <div onClick={() => handleSelectAgent('step2')} className="bg-white rounded-xl p-4 shadow-sm border border-green-100 flex gap-4 items-start relative z-10 cursor-pointer">
                 <div className="flex-shrink-0 w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center border border-green-100">
                   <CheckSquare className="w-6 h-6 text-green-600" />
                 </div>
@@ -186,7 +198,7 @@ const WorkflowDiagram: React.FC = () => {
 
             {/* Step 3 */}
             <div className="relative">
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-purple-100 flex gap-4 items-start relative z-10">
+              <div onClick={() => handleSelectAgent('step3')} className="bg-white rounded-xl p-4 shadow-sm border border-purple-100 flex gap-4 items-start relative z-10 cursor-pointer">
                 <div className="flex-shrink-0 w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center border border-purple-100">
                   <Layers className="w-6 h-6 text-purple-600" />
                 </div>
@@ -208,7 +220,7 @@ const WorkflowDiagram: React.FC = () => {
 
             {/* Step 4 */}
             <div className="relative">
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-orange-100 flex gap-4 items-start relative z-10">
+              <div onClick={() => handleSelectAgent('step4')} className="bg-white rounded-xl p-4 shadow-sm border border-orange-100 flex gap-4 items-start relative z-10 cursor-pointer">
                 <div className="flex-shrink-0 w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center border border-orange-100">
                   <Bot className="w-6 h-6 text-orange-600" />
                 </div>
@@ -247,14 +259,14 @@ const WorkflowDiagram: React.FC = () => {
             </div>
 
             {/* Help Agent */}
-            <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm mt-2">
+            <div onClick={() => handleSelectAgent('help')} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm mt-2 cursor-pointer">
               <div className="flex items-center gap-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
                   <HelpCircle className="w-5 h-5 text-gray-600" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-800 text-sm">需要帮助?</h4>
-                  <p className="text-xs text-gray-500">随时呼叫 Help 智能体解答问题</p>
+                  <h4 className="font-bold text-gray-800 text-sm">辅助问答（Help）</h4>
+                  <p className="text-xs text-gray-500">问答式用户使用手册</p>
                 </div>
               </div>
             </div>
