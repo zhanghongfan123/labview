@@ -901,6 +901,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onOpenSidebar, isD
                transfer_method: 'local_file',
                upload_file_id: fileId
            }];
+           payload.files = [];
         }
         
         // Include Step1 description if available
